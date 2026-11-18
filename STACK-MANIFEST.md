@@ -2,10 +2,10 @@
 
 This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
-    base:        081c858be79e1f77a69262d23cb076677d435324
-    base short:  081c858be
-    patches:     736
-    version:     1.9.0+m4bard.736
+    base:        bfbb0526e378d406bd136ecda619d09693739647
+    base short:  bfbb0526e
+    patches:     739
+    version:     1.9.1+m4bard.739
 
 ## Patches, oldest first
 
@@ -745,6 +745,9 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     a4f963095  #-    stack: merge v1.8.6-canary
     4a201b702  #-    stack: manifest for c35b58fe3 plus 734 patches
     a6bd720d8  #-    stack: merge v1.9.0-canary
+    2e03ac40a  #-    stack: manifest for 081c858be plus 736 patches
+    7d96241b7  #-    stack: merge v1.9.1-canary
+    6a25c15a7  #-    stack: regenerate the Playwright API types for the stack's API surface
 
 ## How this stack was built
 
@@ -816,6 +819,21 @@ count, and disabled when none is shown); that call covers the broken books group
 not carried, and its test finds the button by the "Select All" prefix because the label carries the count while the
 group filters the list.
 
+The 1.9.0 stack ends at its manifest commit, "stack: manifest for 081c858be plus 736 patches", which is the row before
+the 1.9.1 merge. Upstream canary 1.9.1 (bfbb0526e) is then merged in ("stack: merge v1.9.1-canary"), so the 1.9.0 stack
+is an ancestor of this one and every row above it is the 1.9.0 stack's own commit. 1.9.1 brings upstream #1159 (the
+test overhaul: the Listenarr.BackendIntegrationTests and Listenarr.FakeProviders projects, the test mocks moved into
+per-category folders and namespaces, the Audible and Audnexus hand-written mocks replaced by fixture files, the
+Playwright suites replacing the Cypress ones, and new CI jobs) and the version bump. The merge had five conflicts, all
+resolved by keeping both sides: the unit-tests job of run-tests.yml (the packaged-ffprobe check step stays, upstream's
+new jobs follow it), the Select All button in AudiobooksView.vue (the stack's wiring, with upstream's test id), the
+worker registrations (the stack's, through upstream's AddScanQueueService and AddUnmatchedScanWorker helpers), a
+using in DownloadMonitorServiceTests, and the deleted AudibleApiMock, whose author-identity routes this stack had
+extended: they are ported to fixture files and a contributors route in the new Audible fixture provider, and the one
+test that needs the contributor endpoint to fail adds that failure in front of the stub. The stack's other tests are
+pointed at the new mock namespaces, and the Playwright API types are regenerated for the stack's API surface.
+fe/eslint-report.json, which upstream deleted, is kept: the leak scanner blocks any commit that removes its lines.
+
 ## Known differences from the 1.7.4 stack
 
 - A fresh install stores MaxConcurrentIndexerSearches=0. Rolled back to the 1.7.4 stack, such an install searches
@@ -831,5 +849,5 @@ group filters the list.
 
 Migrations: the newest fork migration is 20261114075422 (the request state table). #1023 stays at 20261112054132,
 the fork-local #914 at 20261112054145, and #1151 at 20261114004926. Upstream added no migration since
-20261029020400, and 1.8.5, 1.8.6 and 1.9.0 add none. The history repoint for a database that ran an earlier stack is recomputed
+20261029020400, and 1.8.5, 1.8.6, 1.9.0 and 1.9.1 add none. The history repoint for a database that ran an earlier stack is recomputed
 with this build's upgrade packet.
