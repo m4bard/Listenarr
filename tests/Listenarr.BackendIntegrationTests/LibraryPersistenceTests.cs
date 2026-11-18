@@ -64,6 +64,8 @@ public sealed class LibraryPersistenceTests : BackendIntegrationTests
         {
             name = "Backend Integration Persistence Profile",
             isDefault = true,
+            // The profile carries no qualities, so no cutoff can name one: upgrades off skips that check.
+            upgradeAllowed = false,
         }, HttpStatusCode.Created);
         var profileId = (int)profile["id"]!;
 
