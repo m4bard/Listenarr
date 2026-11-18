@@ -100,6 +100,7 @@ namespace Listenarr.Application.Audiobooks.Contracts.Repositories
         Task<int> BackfillMetadataRefreshTimestampsAsync(CancellationToken ct = default);
         Task<List<Audiobook>> GetLibraryAsync();
         Task<Dictionary<int, List<AudiobookSeriesMembership>>> GetAllSeriesMembershipsGroupedByAudiobookIdAsync(CancellationToken ct = default);
+        Task<Dictionary<int, List<AudiobookExternalIdentifier>>> GetAsinIdentifiersGroupedByAudiobookIdAsync(CancellationToken ct = default);
         Task<List<Audiobook>> GetByIdsWithFilesAsync(IEnumerable<int> ids, CancellationToken ct = default);
         /// <summary>
         /// Projects the audiobooks whose stored PublishedDate falls inside a coarse string range,
