@@ -552,7 +552,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         [Fact]
         public void OpenApi_PreservesLegacyPutRouteAndTimestampContract()
         {
-            using var factory = new Listenarr.Tests.Mocks.ListenarrWebApplicationFactory();
+            using var factory = new Listenarr.Tests.Mocks.Hosting.ListenarrWebApplicationFactory();
             var swaggerDocument = factory.Services
                 .GetRequiredService<ISwaggerProvider>()
                 .GetSwagger("v1");
@@ -617,7 +617,7 @@ namespace Listenarr.Tests.Features.Api.Features.Library
         public async Task HttpPipeline_RejectsMalformedRelocationEnumsBeforeServiceAccess(
             string enumProperties)
         {
-            using var factory = new Listenarr.Tests.Mocks.ListenarrWebApplicationFactory();
+            using var factory = new Listenarr.Tests.Mocks.Hosting.ListenarrWebApplicationFactory();
             using var client = factory.CreateClient();
             var csrfToken = await GetAntiforgeryTokenAsync(client);
             using var request = new HttpRequestMessage(

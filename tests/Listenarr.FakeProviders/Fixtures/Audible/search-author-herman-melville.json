@@ -1,0 +1,31 @@
+{
+  "products": [
+    {
+      "asin": "FIXTUREPRD7",
+      "title": "Sea Stories",
+      "language": "english",
+      "authors": [
+        {
+          "name": "Herman Melville",
+          "asin": "FIXTUREAUT4"
+        }
+      ],
+      "content_type": "Product",
+      "content_delivery_type": "MultiPartBook"
+    },
+    {
+      "asin": "FIXTUREPRD8",
+      "title": "Moby Dick",
+      "language": "english",
+      "authors": [
+        {
+          "name": "Herman Melville",
+          "asin": "FIXTUREAUT5"
+        }
+      ],
+      "content_type": "Product",
+      "content_delivery_type": "MultiPartBook"
+    }
+  ],
+  "total_results": 2
+}

@@ -1,0 +1,30 @@
+{
+  "products": [
+    {
+      "asin": "FIXTUREPRD1",
+      "title": "Pride and Prejudice",
+      "language": "english",
+      "authors": [
+        {
+          "name": "Jane Austen"
+        }
+      ],
+      "content_type": "Product",
+      "content_delivery_type": "MultiPartBook"
+    },
+    {
+      "asin": "FIXTUREPRD2",
+      "title": "Two Classic Novels",
+      "language": "english",
+      "authors": [
+        {
+          "name": "Jane Austen and Charlotte Bronte",
+          "asin": "FIXTURESHR1"
+        }
+      ],
+      "content_type": "Product",
+      "content_delivery_type": "MultiPartBook"
+    }
+  ],
+  "total_results": 2
+}

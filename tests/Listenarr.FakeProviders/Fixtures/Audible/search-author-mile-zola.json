@@ -1,0 +1,18 @@
+{
+  "products": [
+    {
+      "asin": "FIXTUREPRD4",
+      "title": "Germinal",
+      "language": "english",
+      "authors": [
+        {
+          "name": "Emile Zola",
+          "asin": "FIXTUREAUT2"
+        }
+      ],
+      "content_type": "Product",
+      "content_delivery_type": "MultiPartBook"
+    }
+  ],
+  "total_results": 1
+}

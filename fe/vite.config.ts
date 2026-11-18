@@ -13,6 +13,9 @@ export default defineConfig(({ mode }): UserConfig => {
     process.env.LISTENARR_BUNDLE_ANALYZE === 'true' ||
     process.env.ANALYZE === 'true'
 
+  // The API the dev server forwards to; the browser E2E suite points it at the app in Docker.
+  const apiTarget = process.env.LISTENARR_API_URL || 'http://localhost:4545'
+
   return {
     // Emit asset URLs relative to the document instead of the site root, so one build can be
     // mounted on a URL sub-path it knows nothing about. The backend injects a <base href> for the
@@ -79,7 +82,7 @@ export default defineConfig(({ mode }): UserConfig => {
       port: 5173,
       proxy: {
         '/api': {
-          target: 'http://localhost:4545',
+          target: apiTarget,
           changeOrigin: true,
           // Rewrite cookie domains coming from the backend so the browser will
           // accept Set-Cookie when the backend sets cookies for its own host.
@@ -124,7 +127,7 @@ export default defineConfig(({ mode }): UserConfig => {
           },
         },
         '/hubs': {
-          target: 'http://localhost:4545',
+          target: apiTarget,
           changeOrigin: true,
           ws: true,
           configure: (proxy) => {

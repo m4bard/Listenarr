@@ -1,0 +1,31 @@
+{
+  "products": [
+    {
+      "asin": "FIXTUREPRD5",
+      "title": "Gothic Tales",
+      "language": "english",
+      "authors": [
+        {
+          "name": "Mary Shelley",
+          "asin": "FIXTURESHR2"
+        }
+      ],
+      "content_type": "Product",
+      "content_delivery_type": "MultiPartBook"
+    },
+    {
+      "asin": "FIXTUREPRD6",
+      "title": "Frankenstein",
+      "language": "english",
+      "authors": [
+        {
+          "name": "Mary Shelley",
+          "asin": "FIXTUREAUT3"
+        }
+      ],
+      "content_type": "Product",
+      "content_delivery_type": "MultiPartBook"
+    }
+  ],
+  "total_results": 2
+}

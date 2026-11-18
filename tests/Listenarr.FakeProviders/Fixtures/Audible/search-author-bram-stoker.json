@@ -1,0 +1,31 @@
+{
+  "products": [
+    {
+      "asin": "FIXTUREPRD9",
+      "title": "Dracula",
+      "language": "english",
+      "authors": [
+        {
+          "name": "Bram Stoker",
+          "asin": "FIXTUREAUT6"
+        }
+      ],
+      "content_type": "Product",
+      "content_delivery_type": "MultiPartBook"
+    },
+    {
+      "asin": "FIXTUREPRDA",
+      "title": "Victorian Horror Omnibus",
+      "language": "english",
+      "authors": [
+        {
+          "name": "Bram Stoker and Others",
+          "asin": "FIXTURESHR3"
+        }
+      ],
+      "content_type": "Product",
+      "content_delivery_type": "MultiPartBook"
+    }
+  ],
+  "total_results": 2
+}

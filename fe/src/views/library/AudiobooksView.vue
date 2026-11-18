@@ -137,6 +137,7 @@
         <button
           v-if="selectedCount === 0"
           class="toolbar-btn"
+          data-testid="select-all-audiobooks"
           :disabled="audiobooks.length === 0"
           @click="libraryStore.selectAll(audiobooks)"
         >

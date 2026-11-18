@@ -160,7 +160,7 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                         expectedSourceProof);
                     return lease == null
                         ? null
-                        : new Listenarr.Tests.Mocks.MetadataWriteAuthorizedRegistrationLease(lease);
+                        : new Listenarr.Tests.Mocks.Metadata.MetadataWriteAuthorizedRegistrationLease(lease);
                 });
             return fileMover;
         }
@@ -2548,7 +2548,7 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                 ImageUrl = "https://example.invalid/cover.jpg",
                 BasePath = destinationRoot
             };
-            var recorder = new Listenarr.Tests.Mocks.MetadataServiceMock();
+            var recorder = new Listenarr.Tests.Mocks.Metadata.MetadataServiceMock();
             var metadata = new Mock<IMetadataService>();
             metadata.Setup(service => service.ExtractFileMetadataAsync(source))
                 .ReturnsAsync(new AudioMetadata
@@ -2623,7 +2623,7 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
                 ImageUrl = null,
                 BasePath = destinationRoot
             };
-            var recorder = new Listenarr.Tests.Mocks.MetadataServiceMock();
+            var recorder = new Listenarr.Tests.Mocks.Metadata.MetadataServiceMock();
             var metadata = new Mock<IMetadataService>();
             metadata.Setup(service => service.ExtractFileMetadataAsync(source))
                 .ReturnsAsync(new AudioMetadata

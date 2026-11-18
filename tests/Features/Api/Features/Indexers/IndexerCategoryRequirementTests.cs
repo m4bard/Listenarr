@@ -19,7 +19,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Listenarr.Tests.Common;
-using Listenarr.Tests.Mocks;
+using Listenarr.Tests.Mocks.Hosting;
 using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Tests.Features.Api.Features.Indexers

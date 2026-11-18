@@ -20,7 +20,7 @@ using System.Globalization;
 using System.Net;
 using Listenarr.Api.Features.Calendar;
 using Listenarr.Tests.Common;
-using Listenarr.Tests.Mocks;
+using Listenarr.Tests.Mocks.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Listenarr.Tests.Features.Api.Features.Calendar;

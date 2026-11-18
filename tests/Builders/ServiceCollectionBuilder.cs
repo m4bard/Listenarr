@@ -1,6 +1,7 @@
 using Listenarr.Application.Search.Filters;
 using Listenarr.Application.Search.Strategies;
 using Listenarr.Infrastructure.DependencyInjection;
+using Listenarr.FakeProviders;
 using Listenarr.Infrastructure.DependencyInjection.Downloads;
 using Listenarr.Infrastructure.Downloads.Blocklist;
 using Listenarr.Infrastructure.Downloads.DirectDownload;
@@ -9,8 +10,9 @@ using Listenarr.Application.Search.Matching;
 using Listenarr.Application.Common.Scheduling;
 using Listenarr.Infrastructure.HostedServices.Scheduling;
 using Listenarr.Tests.Common;
-using Listenarr.Tests.Mocks;
-using Listenarr.Tests.Mocks.Api;
+using Listenarr.Tests.Mocks.DownloadClients;
+using Listenarr.Tests.Mocks.Media;
+using Listenarr.Tests.Mocks.Trackers;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -240,7 +242,7 @@ namespace Listenarr.Tests.Builders
             services.TryAddSingleton<Microsoft.Extensions.Hosting.IHostApplicationLifetime, TestApplicationLifetime>();
             services.AddSingleton<LibraryScanPathResolver>();
             services.AddSingleton<LibraryScanQueueWorkflow>();
-            services.AddSingleton<LibraryAddWorkflow>();
+            services.AddScoped<LibraryAddWorkflow>();
             services.AddSingleton<LibraryManualScanWorkflow>();
             services.AddSingleton<LibraryBulkEditWorkflow>();
             services.AddSingleton<LibraryMoveWorkflow>();
@@ -267,12 +269,10 @@ namespace Listenarr.Tests.Builders
             services.AddSingleton<IMoveJobProcessor>(sp => sp.GetRequiredService<MoveJobProcessor>());
             services.AddSingleton<MoveBackgroundService>();
             services.AddSingleton<MoveQueueService>();
-            services.AddSingleton<LibraryController>();
+            services.AddScoped<LibraryController>();
             services.AddSingleton<ImagesController>();
             services.AddSingleton(new EphemeralDataProtectionProvider().CreateProtector("Listenarr.ConfigurationService.ProwlarrImport"));
 
-            services.AddSingleton<AudibleApiMock>();
-            services.AddSingleton<AudnexusServiceApiMock>();
             services.AddSingleton<TransmissionApiMock>();
             services.AddSingleton<SabnzbdApiMock>();
             services.AddSingleton<NzbgetApiMock>();
@@ -282,8 +282,9 @@ namespace Listenarr.Tests.Builders
                 FailOnUnexpectedCalls = true
             });
 
-            services.AddHttpClient<AudibleService>()
-                .ConfigurePrimaryHttpMessageHandler<AudibleApiMock>();
+            // Every client keeping its production handler (Audible, Audnexus, OpenLibrary, Amazon, images...)
+            // is answered by the stub: Audible from its fixtures, the rest 404. No backend test reaches the network.
+            services.AddListenarrExternalApiTestStub();
 
             // FIXME: All classes should rely on typed HttpClient instead of named ones
             // TODO: Find a way to test real http client configurations (cookies, retry, security, ...)
@@ -304,8 +305,8 @@ namespace Listenarr.Tests.Builders
             services.AddHttpClient(DownloadRegistrationExtensions.MyAnonamouseTorrentClientName)
                 .ConfigurePrimaryHttpMessageHandler<MyAnonamouseApiMock>();
 
-            services.AddHttpClient<IAudnexusService, AudnexusService>()
-                .ConfigurePrimaryHttpMessageHandler<AudnexusServiceApiMock>();
+            // Audnexus keeps its production handler: the external API stub answers it from its fixtures.
+            services.AddHttpClient<IAudnexusService, AudnexusService>();
 
             services.AddSingleton<IDownloadClientAdapter, DownloadCLientAdapterMock>();
             services.AddSingleton<IDirectDownloadImportSourceResolver, DirectDownloadImportSourceResolver>();

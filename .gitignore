@@ -124,9 +124,10 @@ lerna-debug.log*
 # Testing
 coverage/
 *.coverage
+TestResults/
+coverage-input/
+coverage-report/
 .nyc_output/
-/cypress/videos/
-/cypress/screenshots/
 test-results/
 playwright-report/
 .playwright-cli/

@@ -1,0 +1,57 @@
+{
+  "products": [
+    {
+      "asin": "FIXTUREPRDC",
+      "title": "Camille",
+      "language": "english",
+      "authors": [
+        {
+          "name": "Alexandre Dumas pere",
+          "asin": "FIXTUREAUT8"
+        }
+      ],
+      "content_type": "Product",
+      "content_delivery_type": "MultiPartBook"
+    },
+    {
+      "asin": "FIXTUREPRDD",
+      "title": "The Count of Monte Cristo",
+      "language": "english",
+      "authors": [
+        {
+          "name": "Alexandre Dumas fils",
+          "asin": "FIXTUREAUT9"
+        }
+      ],
+      "content_type": "Product",
+      "content_delivery_type": "MultiPartBook"
+    },
+    {
+      "asin": "FIXTUREPRDE",
+      "title": "The Three Musketeers",
+      "language": "english",
+      "authors": [
+        {
+          "name": "Alexandre Dumas fils",
+          "asin": "FIXTUREAUT9"
+        }
+      ],
+      "content_type": "Product",
+      "content_delivery_type": "MultiPartBook"
+    },
+    {
+      "asin": "FIXTUREPRDF",
+      "title": "Twenty Years After",
+      "language": "english",
+      "authors": [
+        {
+          "name": "Alexandre Dumas fils",
+          "asin": "FIXTUREAUT9"
+        }
+      ],
+      "content_type": "Product",
+      "content_delivery_type": "MultiPartBook"
+    }
+  ],
+  "total_results": 4
+}

@@ -19,7 +19,7 @@
 using System.Collections.Concurrent;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
-using Listenarr.Tests.Mocks.Api;
+using Listenarr.Tests.Mocks.Trackers;
 
 namespace Listenarr.Tests.Features.Infrastructure.Downloads.Submission
 {

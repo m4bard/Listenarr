@@ -1,7 +1,7 @@
 using System.Net;
 using Listenarr.Application.Common.Scheduling;
 using Listenarr.Tests.Common;
-using Listenarr.Tests.Mocks;
+using Listenarr.Tests.Mocks.Hosting;
 
 namespace Listenarr.Tests.Features.Api.Features.SystemDiagnostics;
 

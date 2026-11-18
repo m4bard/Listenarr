@@ -1,0 +1,18 @@
+{
+  "products": [
+    {
+      "asin": "FIXTUREPRDB",
+      "title": "The Moonstone",
+      "language": "english",
+      "authors": [
+        {
+          "name": "Wilkie Collins",
+          "asin": "FIXTUREAUT7"
+        }
+      ],
+      "content_type": "Product",
+      "content_delivery_type": "MultiPartBook"
+    }
+  ],
+  "total_results": 1
+}

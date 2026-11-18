@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using System.Net;
 using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Application.Metadata.Audible
@@ -23,7 +24,8 @@ namespace Listenarr.Tests.Features.Application.Metadata.Audible
     /// Which Audible id a name lookup binds as an author's identity. The binding is durable: it
     /// selects the photo, the biography and the whole catalog on the author page, and once it is
     /// cached the lookup is never consulted again, so a wrong one is self-confirming.
-    /// Fixtures live in AudibleApiMock and every ASIN in them is a fixture literal.
+    /// Fixtures live in Listenarr.FakeProviders/Fixtures/Audible (author searches and contributor records)
+    /// and every ASIN in them is a fixture literal.
     /// </summary>
     [Trait("Name", "AudibleAuthorIdentityTests")]
     [Trait("Category", "AudibleService")]
@@ -124,6 +126,11 @@ namespace Listenarr.Tests.Features.Application.Metadata.Audible
         [Trait("Method", "LookupAuthorAsync")]
         public async Task LookupAuthorAsync_ContributorEndpointFailing_DoesNotFailTheLookup()
         {
+            // The fixtures answer an unknown id with a 404, which is the "not a contributor" signal;
+            // a failing endpoint is a different one, so it is simulated in front of the stub.
+            _services.AddHttpClient<AudibleService>()
+                .AddHttpMessageHandler(() => new ContributorOutageHandler());
+            Init();
             var service = _provider.GetRequiredService<AudibleService>();
 
             var result = await service.LookupAuthorAsync("Bram Stoker", "us");
@@ -162,6 +169,14 @@ namespace Listenarr.Tests.Features.Application.Metadata.Audible
             // first.
             Assert.NotNull(result);
             Assert.Equal("FIXTUREAUT9", result!.Asin);
+        }
+
+        private sealed class ContributorOutageHandler : DelegatingHandler
+        {
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+                request.RequestUri!.AbsolutePath.Contains("/catalog/contributors/", StringComparison.Ordinal)
+                    ? Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError))
+                    : base.SendAsync(request, cancellationToken);
         }
     }
 }

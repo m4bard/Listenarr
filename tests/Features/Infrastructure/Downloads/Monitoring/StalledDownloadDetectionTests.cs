@@ -19,7 +19,7 @@ using System.Globalization;
 using System.Text.Json;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
-using Listenarr.Tests.Mocks.Api;
+using Listenarr.Tests.Mocks.DownloadClients;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring

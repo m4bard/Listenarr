@@ -20,7 +20,7 @@ using System.Net;
 using System.Text;
 using Listenarr.Api.Startup;
 using Listenarr.Tests.Common;
-using Listenarr.Tests.Mocks;
+using Listenarr.Tests.Mocks.Hosting;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;

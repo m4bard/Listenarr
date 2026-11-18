@@ -19,7 +19,7 @@
 using System.Reflection;
 using Listenarr.Infrastructure.Search.RequestGate;
 using Listenarr.Tests.Common;
-using Listenarr.Tests.Mocks;
+using Listenarr.Tests.Mocks.Hosting;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Tests.Features.Api.Composition;
