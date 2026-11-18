@@ -16,8 +16,8 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
 {
     // The manual search (SearchAndDownloadAsync) over the sweep's harness: real DownloadService, real
     // schedule store, scripted indexers behind the scripted gate. It ignores due times, goes through
-    // the gate, and writes only Satisfied pair outcomes: its query is narrower than the sweep's (no
-    // series, no fallback), so finding nothing must not push back the sweep's retries.
+    // the gate, and writes only Satisfied pair outcomes: its query is narrower than the sweep's (its
+    // author-free fallback adds no series), so finding nothing must not push back the sweep's retries.
     [Trait("Name", "ManualSearchTests")]
     [Trait("Category", "Infrastructure")]
     public sealed class ManualSearchTests : AutomaticSearchSweepTestBase
@@ -136,7 +136,13 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
 
             Assert.False(result.Success);
             Assert.Equal(expectedMessage, result.Message);
-            Assert.Equal(1, Server.ServedFor(indexer));
+            // Finding nothing at all retries the indexer once without the author, through the gate as a
+            // fallback request; a rejected release is a result, so it is not retried.
+            IndexerRequestKind[] expectedSends = returnsRejected
+                ? [IndexerRequestKind.Search]
+                : [IndexerRequestKind.Search, IndexerRequestKind.FallbackQuery];
+            Assert.Equal(expectedSends, Gate.Sends.Where(send => send.IndexerId == indexer).Select(send => send.Kind));
+            Assert.Equal(expectedSends.Length, Server.ServedFor(indexer));
             var pair = await Database.ReadPairAsync(book.Id, indexer);
             Assert.Equal(
                 (sweepRetryUtc, 1, 0, nameof(PairScheduleResult.NoAcceptableResults), (DateTime?)StartUtc.AddHours(-18)),

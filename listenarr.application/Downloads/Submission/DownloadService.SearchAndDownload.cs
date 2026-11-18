@@ -70,12 +70,13 @@ namespace Listenarr.Application.Downloads.Submission
                 isAutomaticSearch: true,
                 request: null,
                 CancellationToken.None);
-            var searchResults = report.Outcomes
-                .SelectMany(outcome => outcome.Results)
-                .OrderByDescending(result => result.Seeders ?? 0)
-                .ThenByDescending(result => result.PublishedDate)
-                .Select(SearchResultConverters.ToSearchResult)
-                .ToList();
+            var searchResults = RankedResults(report);
+            if (searchResults.Count == 0)
+            {
+                report = await SearchWithoutAuthorAsync(audiobook, searchQuery, report, origin);
+                searchResults = RankedResults(report);
+            }
+
             var completedIndexerIds = report.Outcomes
                 .Where(outcome => outcome.Status == IndexerSearchStatus.Completed)
                 .Select(outcome => outcome.IndexerId)
@@ -197,6 +198,57 @@ namespace Listenarr.Application.Downloads.Submission
             };
         }
 
+        private static List<SearchResult> RankedResults(IndexerSearchReport report) =>
+            report.Outcomes
+                .SelectMany(outcome => outcome.Results)
+                .OrderByDescending(result => result.Seeders ?? 0)
+                .ThenByDescending(result => result.PublishedDate)
+                .Select(SearchResultConverters.ToSearchResult)
+                .ToList();
+
+        // Author-free fallback, as in the automatic sweep: release names often omit the author, so a
+        // title+author query can return nothing even when the book is available. Retried once, as a
+        // fallback query for the same origin, on each indexer whose full query completed with no
+        // results; a failed or deferred indexer is not asked again. One indexer search covers both
+        // queries: its requests add up, and a fallback that did not complete decides how it ended.
+        private async Task<IndexerSearchReport> SearchWithoutAuthorAsync(
+            Audiobook audiobook,
+            string searchQuery,
+            IndexerSearchReport report,
+            SearchOrigin origin)
+        {
+            var fallbackQuery = DownloadSearchQueryBuilder.BuildTitleFallback(audiobook);
+            var emptyIndexerIds = report.Outcomes
+                .Where(AnsweredEmpty)
+                .Select(outcome => outcome.IndexerId)
+                .ToList();
+            if (emptyIndexerIds.Count == 0
+                || string.IsNullOrWhiteSpace(fallbackQuery)
+                || string.Equals(fallbackQuery, searchQuery, StringComparison.OrdinalIgnoreCase))
+            {
+                return report;
+            }
+
+            logger.LogInformation("No results for '{Title}' with the full query; retrying without the author on {Count} indexer(s): {Query}",
+                LogRedaction.SanitizeText(audiobook.Title), emptyIndexerIds.Count, LogRedaction.SanitizeText(fallbackQuery));
+            var fallback = await searchService.SearchIndexersDetailedAsync(
+                fallbackQuery,
+                new IndexerSearchContext(origin, CycleAllowance: null, IndexerRequestKind.FallbackQuery),
+                emptyIndexerIds,
+                isAutomaticSearch: true,
+                request: null,
+                CancellationToken.None);
+            var fallbackByIndexer = fallback.Outcomes.ToDictionary(outcome => outcome.IndexerId);
+            return new IndexerSearchReport(report.Outcomes
+                .Select(primary => AnsweredEmpty(primary) && fallbackByIndexer.TryGetValue(primary.IndexerId, out var retried)
+                    ? retried with { RequestsSent = primary.RequestsSent + retried.RequestsSent }
+                    : primary)
+                .ToList());
+        }
+
+        private static bool AnsweredEmpty(IndexerSearchOutcome outcome) =>
+            outcome.Status == IndexerSearchStatus.Completed && outcome.Results.Count == 0;
+
         // Nothing came back. A request the gate held back is the reason when there is one; otherwise
         // the indexers answered with nothing or failed.
         private static SearchAndDownloadResult NoSearchResults(IndexerSearchReport report)
@@ -220,8 +272,8 @@ namespace Listenarr.Application.Downloads.Submission
         }
 
         // A manual search records only a grab, on every indexer that answered, through the schedule store.
-        // Finding nothing is not recorded: the manual query is narrower than the sweep's (no series, no
-        // fallback), so it must not push back the sweep's retries. A failed or deferred indexer is not
+        // Finding nothing is not recorded: the manual query is narrower than the sweep's (its fallback
+        // adds no series), so it must not push back the sweep's retries. A failed or deferred indexer is not
         // recorded either: the failure ladder and the backoff belong to the sweep.
         private async Task RecordSatisfiedPairsAsync(int audiobookId, IReadOnlyList<int> indexerIds)
         {
