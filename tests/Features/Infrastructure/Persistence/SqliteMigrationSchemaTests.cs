@@ -108,6 +108,9 @@ public class SqliteMigrationSchemaTests : BaseTests
     private const string IndexerRequestStateMigrationId =
         "20261114075422_AddIndexerRequestState";
 
+    private const string AudiobookAddedDateMigrationId =
+        ListenarrDatabaseMigrationPreflight.AudiobookAddedDateMigrationId;
+
     private static (SqliteConnection Connection, ListenArrDbContext Context)
         CreateMigratedSqliteContext()
     {
@@ -582,7 +585,8 @@ public class SqliteMigrationSchemaTests : BaseTests
                 QualityProfileUpgradeAllowedMigrationId,
                 MetadataRescanScheduleMigrationId,
                 AutomaticSearchScheduleMigrationId,
-                IndexerRequestStateMigrationId
+                IndexerRequestStateMigrationId,
+                AudiobookAddedDateMigrationId
             ],
             postCanary);
         Assert.Contains("20251124102000_AddMoveJobSourcePath", applied);

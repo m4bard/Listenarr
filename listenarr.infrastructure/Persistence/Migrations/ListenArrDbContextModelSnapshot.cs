@@ -204,6 +204,9 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                     b.Property<bool>("Abridged")
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime?>("Added")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Asin")
                         .HasColumnType("TEXT");
 

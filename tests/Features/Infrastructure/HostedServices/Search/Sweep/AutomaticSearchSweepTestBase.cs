@@ -14,6 +14,7 @@ using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Features.Infrastructure.Persistence;
 using Listenarr.Tests.Features.Infrastructure.Persistence.LargeLibrary;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -64,6 +65,9 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
 
         /// <summary>The gate the processor resolves instead of <see cref="Gate"/>, when a test sets it.</summary>
         internal IIndexerRequestGate? GateOverride { get; set; }
+
+        /// <summary>The hub the debug broadcasts resolve, when a test sets it; applied by <see cref="BuildHost"/>.</summary>
+        internal IHubContext<DownloadHub>? HubOverride { get; set; }
 
         internal IDbContextFactory<ListenArrDbContext> DatabaseContexts => new DatabaseFactory(_database!);
 
@@ -119,6 +123,9 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search.Sweep
                         new SourceScoring(_quality!), ActivatorUtilities.CreateInstance<AutomaticSearchScoringService>(provider)))
                     : ServiceDescriptor.Singleton<IAutomaticSearchScoringService>(new SourceScoring(_quality!)))
                 .WithSingleton(Downloads.Object)
+                .WithMocks(HubOverride == null
+                    ? Array.Empty<ServiceDescriptor>()
+                    : new[] { ServiceDescriptor.Singleton(HubOverride) })
                 .WithMocks(
                     ServiceDescriptor.Scoped<ListenArrDbContext>(_ => factory.CreateDbContext()),
                     ServiceDescriptor.Scoped<IAutomaticSearchScheduleStore>(provider =>

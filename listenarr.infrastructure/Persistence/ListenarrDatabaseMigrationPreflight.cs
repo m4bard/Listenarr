@@ -12,6 +12,8 @@ internal static class ListenarrDatabaseMigrationPreflight
         "20261112054132_AddQualityProfileUpgradeAllowed";
     internal const string HousekeepingRetentionMigrationId =
         "20260922220833_AddHousekeepingRetention";
+    internal const string AudiobookAddedDateMigrationId =
+        "20261119022628_AddAudiobookAddedDate";
 
     public static ListenarrDatabaseMigrationPreflightResult RepairLegacyData(
         ListenArrDbContext context)
@@ -60,6 +62,7 @@ internal static class ListenarrDatabaseMigrationPreflight
         var upgradeFlagsRepaired = RepairQualityProfileUpgradeFlags(context, applied);
         var moveJobsRepaired = 0;
         var terminalTimestampsBackfilled = 0;
+        var audiobookAddedDatesBackfilled = 0;
 
         if (applied.Contains(DurableFilesystemRecoveryMigrationId))
         {
@@ -116,10 +119,57 @@ internal static class ListenarrDatabaseMigrationPreflight
             transaction.Commit();
         }
 
+        if (applied.Contains(AudiobookAddedDateMigrationId))
+        {
+            using var transaction = context.Database.BeginTransaction();
+            audiobookAddedDatesBackfilled = context.Database.ExecuteSqlRaw(
+                """
+                WITH "Evidence" AS (
+                    SELECT
+                        "AudiobookId",
+                        MIN("Timestamp") AS "ObservedAt",
+                        0 AS "Priority"
+                    FROM "History"
+                    WHERE "EventType" = 'Added'
+                      AND "AudiobookId" IS NOT NULL
+                    GROUP BY "AudiobookId"
+
+                    UNION ALL
+
+                    SELECT
+                        "AudiobookId",
+                        MIN("CreatedAt") AS "ObservedAt",
+                        1 AS "Priority"
+                    FROM "AudiobookFiles"
+                    GROUP BY "AudiobookId"
+                ),
+                "BestEvidence" AS (
+                    SELECT
+                        "AudiobookId",
+                        COALESCE(
+                            MIN(CASE WHEN "Priority" = 0 THEN "ObservedAt" END),
+                            MIN(CASE WHEN "Priority" = 1 THEN "ObservedAt" END)
+                        ) AS "ObservedAt"
+                    FROM "Evidence"
+                    GROUP BY "AudiobookId"
+                )
+                UPDATE "Audiobooks"
+                SET "Added" = (
+                    SELECT "BestEvidence"."ObservedAt"
+                    FROM "BestEvidence"
+                    WHERE "BestEvidence"."AudiobookId" = "Audiobooks"."Id"
+                )
+                WHERE "Added" IS NULL
+                  AND "Id" IN (SELECT "AudiobookId" FROM "BestEvidence");
+                """);
+            transaction.Commit();
+        }
+
         return new ListenarrDatabasePostMigrationRepairResult(
             moveJobsRepaired,
             terminalTimestampsBackfilled,
-            upgradeFlagsRepaired);
+            upgradeFlagsRepaired,
+            audiobookAddedDatesBackfilled);
     }
 
     /// <summary>
@@ -289,7 +339,8 @@ internal readonly record struct ListenarrDatabaseMigrationPreflightResult(
 internal readonly record struct ListenarrDatabasePostMigrationRepairResult(
     int MoveJobsRepaired,
     int MoveJobTerminalTimestampsBackfilled,
-    int QualityProfileUpgradeFlagsRepaired);
+    int QualityProfileUpgradeFlagsRepaired,
+    int AudiobookAddedDatesBackfilled);
 
 internal readonly record struct ListenarrAmbiguousAuthorAsinRepairResult(
     int MonitoredAuthorsRepaired,

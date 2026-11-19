@@ -125,7 +125,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             }
 
             progress.AnyPairCompleted = outcomes.Any(entry => entry.Outcome.Status == IndexerSearchStatus.Completed);
-            await BroadcastRawResultsAsync(audiobook, searchQuery, candidates);
+            await BroadcastRawResultsAsync(audiobook, searchQuery, candidates, ct);
 
             var acquired = candidates.Count == 0
                 ? null
@@ -362,7 +362,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
         }
 
         // Broadcast detailed debug info about the raw search results to help diagnose automatic search failures
-        private async Task BroadcastRawResultsAsync(Audiobook audiobook, string searchQuery, List<IndexerSearchResult> searchResults)
+        private async Task BroadcastRawResultsAsync(Audiobook audiobook, string searchQuery, List<IndexerSearchResult> searchResults, CancellationToken ct)
         {
             try
             {
@@ -383,7 +383,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 // Send structured payload with type and audiobookId so the UI can ignore automatic messages by default
                 await hub.Clients.All.SendCoreAsync("SearchProgress", new object[] { new { message = $"Automatic search query: {searchQuery}", details = new { rawCount = searchResults.Count, rawSamples = rawSummaries }, type = "automatic", audiobookId = audiobook.Id } });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            catch (Exception ex) when (AutomaticSearchBroadcastFailure.IsContainable(ex, ct))
             {
                 logger.LogDebug(ex, "Failed to broadcast raw search results summary for audiobook {Id}", audiobook.Id);
             }

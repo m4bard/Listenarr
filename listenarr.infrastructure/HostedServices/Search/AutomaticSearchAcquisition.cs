@@ -134,7 +134,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             var ranked = AutomaticSearchScoringService.InSelectionOrder(assessment.Candidates, audiobook.QualityProfile).ToList();
             _logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", ranked.Count, audiobook.Title);
 
-            await BroadcastScoredResultsAsync(audiobook, ranked);
+            await BroadcastScoredResultsAsync(audiobook, ranked, ct);
             // Same ordering as the selection below, so the log lists candidates in the order
             // they were actually considered.
             foreach (var scoredResult in ranked)
@@ -255,7 +255,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
         }
 
         // Broadcast scored result summaries (score + rejection reasons) to aid debugging
-        private async Task BroadcastScoredResultsAsync(Audiobook audiobook, IReadOnlyList<AutomaticCandidateScore> scoredResults)
+        private async Task BroadcastScoredResultsAsync(Audiobook audiobook, IReadOnlyList<AutomaticCandidateScore> scoredResults, CancellationToken ct)
         {
             try
             {
@@ -282,7 +282,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                 var hub = scope.ServiceProvider.GetRequiredService<IHubContext<DownloadHub>>();
                 await hub.Clients.All.SendCoreAsync("SearchProgress", new object[] { new { message = $"Scored results for '{audiobook.Title}'", details = new { scoredCount = scoredResults.Count, scoredSamples = scoredSummaries }, type = "automatic", audiobookId = audiobook.Id } });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            catch (Exception ex) when (AutomaticSearchBroadcastFailure.IsContainable(ex, ct))
             {
                 _logger.LogDebug(ex, "Failed to broadcast scored search results for audiobook {Id}", audiobook.Id);
             }

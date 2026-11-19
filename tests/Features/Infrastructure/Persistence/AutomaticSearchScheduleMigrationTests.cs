@@ -7,8 +7,10 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using Listenarr.Infrastructure.Persistence.Migrations;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
+using Listenarr.Tests.Features.Infrastructure.Migrations;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -71,7 +73,9 @@ public sealed class AutomaticSearchScheduleMigrationTests : BaseTests
         await MigrateAsync(connection, ScheduleMigrationId);
         int[] bookIds;
         int[] indexerIds;
-        await using (var context = new ListenArrDbContext(CreateOptions(connection)))
+        // Written as this migration's schema stores them: the current model maps columns that
+        // later migrations add, and EF would name them in the INSERT.
+        await using (var context = ReleasedSchemaWriteContext.Create<AddAutomaticSearchSchedule>(connection))
         {
             var books = new[] { "A Princess of Mars", "The Wonderful Wizard of Oz" }
                 .Select(title => new AudiobookBuilder().WithTitle(title).Build()).ToArray();

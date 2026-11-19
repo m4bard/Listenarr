@@ -116,6 +116,13 @@ public static class InfrastructureStartupCompositionExtensions
                     repairedPostMigrationData.QualityProfileUpgradeFlagsRepaired);
             }
 
+            if (repairedPostMigrationData.AudiobookAddedDatesBackfilled > 0)
+            {
+                Log.Logger.Information(
+                    "[Startup] Backfilled Date Added for {Count} legacy audiobook row(s) from durable library evidence",
+                    repairedPostMigrationData.AudiobookAddedDatesBackfilled);
+            }
+
             var repairedAuthorAsins =
                 ListenarrDatabaseMigrationPreflight.RepairAmbiguousAuthorAsins(ctx);
             if (repairedAuthorAsins.MonitoredAuthorsRepaired > 0

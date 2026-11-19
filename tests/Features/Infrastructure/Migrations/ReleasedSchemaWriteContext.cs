@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -19,8 +20,18 @@ internal static class ReleasedSchemaWriteContext
 {
     public static ListenArrDbContext Create<TFrontier>(string connectionString)
         where TFrontier : Migration, new() =>
-        new(new DbContextOptionsBuilder<ListenArrDbContext>()
-            .UseSqlite(connectionString)
+        Create<TFrontier>(new DbContextOptionsBuilder<ListenArrDbContext>().UseSqlite(connectionString));
+
+    /// <summary>
+    /// The same over an open connection, for an in-memory database that exists only as long as it.
+    /// </summary>
+    public static ListenArrDbContext Create<TFrontier>(SqliteConnection connection)
+        where TFrontier : Migration, new() =>
+        Create<TFrontier>(new DbContextOptionsBuilder<ListenArrDbContext>().UseSqlite(connection));
+
+    private static ListenArrDbContext Create<TFrontier>(DbContextOptionsBuilder<ListenArrDbContext> options)
+        where TFrontier : Migration, new() =>
+        new(options
             .ReplaceService<IModelCustomizer, FrontierModelCustomizer<TFrontier>>()
             .Options);
 
