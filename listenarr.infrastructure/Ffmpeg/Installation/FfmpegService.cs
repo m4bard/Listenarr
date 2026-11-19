@@ -22,21 +22,28 @@ using Microsoft.Extensions.Logging;
 namespace Listenarr.Infrastructure.Ffmpeg.Installation
 {
     /// <summary>
-    /// Resolves and runs ffprobe. In this option for upstream #791 the binary is provided by the
-    /// Openur.FFprobeStatic NuGet package and restored at build time, so nothing is downloaded at
-    /// first boot and the version is pinned in Directory.Packages.props like any other dependency.
-    /// A binary in the configured ffmpeg directory is used only when no packaged binary matches
-    /// the running platform; while a packaged one exists, a hand-placed or previously downloaded
-    /// copy there is ignored, even if the packaged one later fails to run.
+    /// Resolves and runs ffprobe. The binary is provided by the Openur.FFprobeStatic NuGet package
+    /// and restored at build time, so the version is pinned in Directory.Packages.props like any
+    /// other dependency and nothing is downloaded at runtime. A binary in the configured ffmpeg
+    /// directory is used only when no packaged binary matches the running platform; while a
+    /// packaged one exists, a hand-placed or previously downloaded copy there is ignored, even if
+    /// the packaged one later fails to run. With neither, ffprobe is unavailable.
     /// </summary>
     public partial class FfmpegService : IFfmpegService
     {
-        // Must match the Openur.FFprobeStatic version in Directory.Packages.props; a test enforces it.
-        internal const string PackagedVersion = "9.0.2.508";
-
-        internal const string PackagedLicenseNotice =
-            "ffprobe is a static FFmpeg build shipped with Listenarr in the Openur.FFprobeStatic "
-            + PackagedVersion + " package. Review FFmpeg licensing (LGPL/GPL) at https://ffmpeg.org/legal.html";
+        /// <summary>
+        /// The notice for the packaged binary. The version is the one the binary reports through
+        /// <c>-version</c>, so a package bump needs no code change; it is left out when the
+        /// binary does not pass the check. Every build and publish output carries the licence texts
+        /// and the source notice under <c>licenses/ffprobe/</c>.
+        /// </summary>
+        internal static string PackagedLicenseNotice(string? version)
+        {
+            var name = string.IsNullOrEmpty(version) ? "ffprobe" : $"ffprobe {version}";
+            return name + " is a static FFmpeg build shipped with Listenarr in the Openur.FFprobeStatic package, "
+                + "under the LGPL version 3 or later. The licence texts and a notice saying where its source is "
+                + "are in licenses/ffprobe/ in the Listenarr application directory.";
+        }
 
         internal const string LegacyLicenseNotice =
             "ffprobe was found in the ffmpeg directory under the config directory and did not ship with Listenarr. "
@@ -48,40 +55,49 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
         private readonly IReadOnlyList<string> _runtimeIdentifiers;
         private readonly bool _isWindows;
         private readonly string _legacyDirectory;
+        private readonly string _legacyFfprobePath;
         private readonly ILogger<FfmpegService> _logger;
         private readonly IProcessRunner _processRunner;
+        private readonly TimeProvider _timeProvider;
 
         public FfmpegService(
             ILogger<FfmpegService> logger,
             IProcessRunner processRunner,
             IApplicationPathService applicationPathService,
             string? applicationBaseDirectory = null,
-            string? runtimeIdentifier = null)
+            string? runtimeIdentifier = null,
+            TimeProvider? timeProvider = null)
         {
             _logger = logger;
             _processRunner = processRunner;
+            _timeProvider = timeProvider ?? TimeProvider.System;
             _applicationBaseDirectory = applicationBaseDirectory ?? AppContext.BaseDirectory;
             _runtimeIdentifiers = runtimeIdentifier == null
                 ? FfprobeBinaryLocator.CurrentRuntimeIdentifiers()
                 : new[] { runtimeIdentifier }.Concat(FfprobeBinaryLocator.CurrentRuntimeIdentifiers()).Distinct(StringComparer.Ordinal).ToArray();
             _isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
             _legacyDirectory = applicationPathService.FfmpegRootPath;
+            _legacyFfprobePath = Path.Join(_legacyDirectory, FfprobeBinaryLocator.ExecutableName(_isWindows));
         }
 
         /// <summary>
         /// The packaged binary first, then one in the configured ffmpeg directory. A binary an older
-        /// release downloaded into that directory is therefore superseded by the packaged one.
+        /// release downloaded into that directory is therefore superseded by the packaged one. A
+        /// chosen path that leads through a link out of the application or ffmpeg directory it sits
+        /// in is rejected before anything chmods or runs it, and a rejected packaged binary does not
+        /// fall back to the copy in the ffmpeg directory.
         /// </summary>
         private string? ResolveFfprobePath()
         {
-            var packaged = ResolvePackagedFfprobePath();
-            if (packaged != null)
+            var path = ResolvePackagedFfprobePath()
+                ?? (File.Exists(_legacyFfprobePath) ? _legacyFfprobePath : null);
+            if (path != null && !FileSystemSafety.TryValidateMutationTarget(path, [_applicationBaseDirectory, _legacyDirectory], out _, out var reason))
             {
-                return packaged;
+                _logger.LogWarning("Rejected ffprobe path outside configured roots: {Reason}", LogRedaction.SanitizeText(reason));
+                return null;
             }
 
-            var legacy = Path.Join(_legacyDirectory, FfprobeBinaryLocator.ExecutableName(_isWindows));
-            return File.Exists(legacy) ? legacy : null;
+            return path;
         }
 
         private string? ResolvePackagedFfprobePath()
@@ -90,16 +106,17 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
         }
 
         /// <summary>
-        /// Return the ffprobe path if a packaged or configured binary exists. Never downloads.
+        /// Return the ffprobe path if a packaged or configured binary exists and passes the version
+        /// check. Never downloads anything.
         /// </summary>
-        public Task<string?> GetFfprobePathAsync()
+        public async Task<string?> GetFfprobePathAsync()
         {
-            var path = ResolveFfprobePath();
+            var (path, failure) = await ResolveValidatedFfprobePathAsync();
             if (path != null)
             {
                 _logger.LogInformation("Found ffprobe at {Path}", path);
             }
-            else
+            else if (failure == null)
             {
                 _logger.LogInformation(
                     "No ffprobe found for runtimes {Rids} under {ApplicationBase} or {LegacyDirectory}",
@@ -108,26 +125,29 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
                     _legacyDirectory);
             }
 
-            return Task.FromResult(path);
+            return path;
         }
 
         /// <summary>
-        /// Resolve ffprobe and make sure it can be executed. Never downloads. NuGet restore leaves
-        /// the binary executable by its owner only (0766 less the umask), and an unzip tool or an
-        /// artifact transfer can strip even that, so the execute bits are restored here when this
-        /// process owns the file. A foreign-owned install cannot be changed from here, which is
-        /// why the Docker image sets the mode at build time.
+        /// Resolve ffprobe, make sure it can be executed and check it with <c>-version</c>. Nothing
+        /// is downloaded, so with no packaged or configured binary ffprobe stays unavailable and
+        /// audio metadata extraction is disabled. NuGet restore leaves the binary executable by
+        /// its owner only (0766 less the umask), and an unzip tool or an artifact transfer can
+        /// strip even that, so the execute bits are restored here when this process owns the file.
+        /// A foreign-owned install cannot be changed from here, which is why the Docker image sets
+        /// the mode at build time. A binary that fails the check is reported as unavailable; a
+        /// failing packaged binary does not fall back to a copy in the ffmpeg directory.
         /// </summary>
-        public Task<string?> EnsureFfprobeInstalledAsync()
+        public async Task<string?> EnsureFfprobeInstalledAsync()
         {
             var path = ResolveFfprobePath();
             if (path == null)
             {
-                _logger.LogWarning(
-                    "No packaged ffprobe for runtimes {Rids}; audio metadata extraction is unavailable until one is placed at {LegacyDirectory}",
+                _logger.LogInformation(
+                    "No packaged ffprobe for runtimes {Rids} and none at {LegacyDirectory}",
                     string.Join(", ", _runtimeIdentifiers),
                     _legacyDirectory);
-                return Task.FromResult<string?>(null);
+                return null;
             }
 
             if (!OperatingSystem.IsWindows())
@@ -135,7 +155,7 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
                 EnsureExecutable(path);
             }
 
-            return Task.FromResult<string?>(path);
+            return (await ValidateFfprobeAsync(path)).Failure == null ? path : null;
         }
 
         [UnsupportedOSPlatform("windows")]

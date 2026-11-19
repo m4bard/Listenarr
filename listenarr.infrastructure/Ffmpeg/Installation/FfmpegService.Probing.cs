@@ -45,6 +45,12 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
                     throw new FfmpegException($"ffprobe target is not a supported audio file: {sanitizedPublicPath}");
                 }
 
+                var ffprobeFailure = (await ValidateFfprobeAsync(safeFfprobePath)).Failure;
+                if (ffprobeFailure != null)
+                {
+                    throw new FfmpegException($"ffprobe binary is unavailable: {LogRedaction.SanitizeText(ffprobeFailure)}");
+                }
+
                 var safeReadPath = Path.GetFullPath(fileSource.ReadPath);
                 _logger.LogInformation("Running ffprobe at {Path} against file {File}", safeFfprobePath, sanitizedPublicPath);
 
@@ -105,15 +111,20 @@ namespace Listenarr.Infrastructure.Ffmpeg.Installation
             return metadata;
         }
 
-        public Task<string> GetLicenseAsync()
+        public async Task<string> GetLicenseAsync()
         {
             var path = ResolveFfprobePath();
             if (path == null)
             {
-                return Task.FromResult(string.Empty);
+                return string.Empty;
             }
 
-            return Task.FromResult(path == ResolvePackagedFfprobePath() ? PackagedLicenseNotice : LegacyLicenseNotice);
+            if (path != ResolvePackagedFfprobePath())
+            {
+                return LegacyLicenseNotice;
+            }
+
+            return PackagedLicenseNotice((await ValidateFfprobeAsync(path)).Version);
         }
     }
 }

@@ -51,6 +51,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
                     "{\"format\":{\"format_name\":\"mov\",\"duration\":\"1\"},\"streams\":[]}",
                     string.Empty,
                     false));
+            processRunner.AnswerFfprobeVersionCheck();
             var service = new FfmpegService(
                 new Mock<ILogger<FfmpegService>>().Object,
                 processRunner.Object,
@@ -108,6 +109,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
                     "{\"format\":{\"format_name\":\"mov\",\"duration\":\"1\"},\"streams\":[]}",
                     string.Empty,
                     false));
+            processRunner.AnswerFfprobeVersionCheck();
             var service = new FfmpegService(
                 new Mock<ILogger<FfmpegService>>().Object,
                 processRunner.Object,
@@ -155,6 +157,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
                     stdout,
                     string.Empty,
                     timedOut));
+            processRunner.AnswerFfprobeVersionCheck();
             var service = new FfmpegService(
                 new Mock<ILogger<FfmpegService>>().Object,
                 processRunner.Object,

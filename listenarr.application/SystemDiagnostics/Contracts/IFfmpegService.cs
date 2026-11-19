@@ -23,14 +23,17 @@ namespace Listenarr.Application.SystemDiagnostics.Contracts
         /// <summary>
         /// Return the full path to ffprobe: the binary shipped with the application for this
         /// platform, or failing that one placed in the configured ffmpeg directory. Null when
-        /// neither exists. Never downloads anything.
+        /// neither exists, or when the one that would be used fails its <c>-version</c> check; a
+        /// failing packaged binary does not fall back to the configured one. Never downloads
+        /// anything.
         /// </summary>
         Task<string?> GetFfprobePathAsync();
 
         /// <summary>
         /// Resolve ffprobe as <see cref="GetFfprobePathAsync"/> does and, on Unix, restore its
         /// execute permission where this process can. Intended to be called once at startup.
-        /// Never downloads anything. Returns the path or null if no binary is available.
+        /// Never downloads anything. Returns the path, or null when no binary exists or the one
+        /// resolved fails its <c>-version</c> check.
         /// </summary>
         Task<string?> EnsureFfprobeInstalledAsync();
 

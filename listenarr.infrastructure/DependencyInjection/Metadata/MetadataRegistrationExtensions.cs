@@ -10,6 +10,7 @@
 using Listenarr.Infrastructure.DependencyInjection.Platform;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.Extensions.Http;
@@ -48,11 +49,13 @@ internal static class MetadataRegistrationExtensions
         services.AddSingleton<MetadataRefreshOptionsHolder>();
         services.AddSingleton<IMetadataRefreshCoordinator, MetadataRefreshCoordinator>();
         services.AddSingleton<MetadataExtractionLimiter>();
+        services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IFfmpegService>(provider =>
             new FfmpegService(
                 provider.GetRequiredService<ILogger<FfmpegService>>(),
                 provider.GetRequiredService<IProcessRunner>(),
-                provider.GetRequiredService<IApplicationPathService>()));
+                provider.GetRequiredService<IApplicationPathService>(),
+                timeProvider: provider.GetRequiredService<TimeProvider>()));
         return services;
     }
 

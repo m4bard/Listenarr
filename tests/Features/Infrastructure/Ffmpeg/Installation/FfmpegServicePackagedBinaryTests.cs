@@ -7,8 +7,8 @@ using Listenarr.Tests.Common;
 namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
 {
     /// <summary>
-    /// The NuGet option for upstream #791: ffprobe comes from a package restored at build time,
-    /// so startup resolves a binary that is already on disk and never downloads one.
+    /// ffprobe comes from the Openur.FFprobeStatic package restored at build time, so startup
+    /// resolves a binary that is already on disk and never downloads one.
     /// </summary>
     [Trait("Name", "FfmpegServicePackagedBinaryTests")]
     [Trait("Category", "FfmpegService")]
@@ -20,9 +20,6 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
         public async Task EnsureFfprobeInstalledAsync_PackagedBinary_ResolvesAndProbesRealAudio()
         {
             var legacyDirectory = Path.Join(FileService.GetTempPath(), "ffmpeg-legacy-unused");
-            // A plain runner rather than SystemProcessRunner: that one regex-redacts every
-            // process's stdout against process-wide secret values, and under the full parallel
-            // suite another test's values corrupted the JSON. This test is about the binary.
             var service = CreateService(
                 new UnredactedProcessRunner(),
                 legacyDirectory,
@@ -96,7 +93,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
             // The reflection test above misses an HttpClient created inside a method body, so
             // scan the source for any network API as well.
             var forbidden = new Regex(@"\b(HttpClient|HttpMessageHandler|System\.Net\.Http|WebClient|WebRequest|Socket|SslStream)\b", RegexOptions.Compiled);
-            var ffmpegRoot = Path.Join(RepositoryRoot(), "listenarr.infrastructure", "Ffmpeg");
+            var ffmpegRoot = Path.Join(TestUtils.FindRepositoryRoot(), "listenarr.infrastructure", "Ffmpeg");
             var offenders = Directory.EnumerateFiles(ffmpegRoot, "*.cs", SearchOption.AllDirectories)
                 .SelectMany(file => File.ReadLines(file)
                     .Select((line, index) => (line, index))
@@ -108,22 +105,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
         }
 
         [Fact]
-        public void PackagedVersion_MatchesTheCentralPackageVersion()
-        {
-            var props = System.Xml.Linq.XDocument.Load(Path.Join(RepositoryRoot(), "Directory.Packages.props"));
-            var version = props.Descendants("PackageVersion")
-                .Single(element => (string?)element.Attribute("Include") == "Openur.FFprobeStatic")
-                .Attribute("Version")?.Value;
-
-            Assert.Equal(FfmpegService.PackagedVersion, version);
-        }
-
-        [Fact]
         public async Task GetLicenseAsync_NamesTheSourceOfTheBinaryInUse()
         {
             var applicationBase = FileService.GetTempDirectory("ffprobe-license-app");
             var legacyDirectory = FileService.GetTempDirectory("ffprobe-license-legacy");
-            var service = CreateService(new Mock<IProcessRunner>().Object, legacyDirectory, applicationBase);
+            var service = CreateService(new Mock<IProcessRunner>().AnswerFfprobeVersionCheck().Object, legacyDirectory, applicationBase);
 
             Assert.Equal(string.Empty, await service.GetLicenseAsync());
 
@@ -131,8 +117,56 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
             Assert.Equal(FfmpegService.LegacyLicenseNotice, await service.GetLicenseAsync());
 
             await File.WriteAllTextAsync(Path.Join(applicationBase, ExecutableName), "packaged");
-            Assert.Equal(FfmpegService.PackagedLicenseNotice, await service.GetLicenseAsync());
-            Assert.Contains(FfmpegService.PackagedVersion, FfmpegService.PackagedLicenseNotice);
+            var notice = await service.GetLicenseAsync();
+            Assert.Contains("Openur.FFprobeStatic", notice);
+            Assert.NotEqual(FfmpegService.LegacyLicenseNotice, notice);
+        }
+
+        [Fact]
+        public void PackagedLicenseNotice_NamesTheLicenceAndPointsAtTheShippedFiles()
+        {
+            var notice = FfmpegService.PackagedLicenseNotice("9.0.2-example");
+
+            Assert.Contains("LGPL version 3 or later", notice);
+            Assert.DoesNotContain("LGPL/GPL", notice);
+            Assert.Contains("licenses/ffprobe/", notice);
+            // The build copies licenses/ffprobe/ into every output, the test output included, so
+            // the directory the notice names is really there next to the application.
+            foreach (var file in new[] { "NOTICE", "LGPL-3.0.txt", "GPL-3.0.txt", "dav1d-BSD-2-Clause.txt" })
+            {
+                Assert.True(
+                    File.Exists(Path.Join(AppContext.BaseDirectory, "licenses", "ffprobe", file)),
+                    $"licenses/ffprobe/{file} is missing from the build output");
+            }
+        }
+
+        [Fact]
+        public async Task GetLicenseAsync_PackagedBinary_NamesTheVersionTheBinaryReports()
+        {
+            // The version comes from -version rather than a constant, so a package bump changes
+            // the notice without a code change.
+            var applicationBase = FileService.GetTempDirectory("ffprobe-license-version");
+            await File.WriteAllTextAsync(Path.Join(applicationBase, ExecutableName), "packaged");
+            var processRunner = new Mock<IProcessRunner>().AnswerFfprobeVersionCheck(
+                new ProcessResult(0, "ffprobe version 10.1-example Copyright (c) 2007-2026 the FFmpeg developers\n", string.Empty, false));
+            var service = CreateService(processRunner.Object, Path.Join(FileService.GetTempPath(), "ffmpeg-unused"), applicationBase);
+
+            var notice = await service.GetLicenseAsync();
+
+            Assert.StartsWith("ffprobe 10.1-example is a static FFmpeg build", notice);
+            Assert.DoesNotContain("9.0.2", notice);
+        }
+
+        [Fact]
+        public async Task GetLicenseAsync_PackagedBinaryFailingTheCheck_OmitsTheVersion()
+        {
+            var applicationBase = FileService.GetTempDirectory("ffprobe-license-failing");
+            await File.WriteAllTextAsync(Path.Join(applicationBase, ExecutableName), "packaged");
+            var processRunner = new Mock<IProcessRunner>().AnswerFfprobeVersionCheck(
+                new ProcessResult(1, string.Empty, "not an ffprobe", false));
+            var service = CreateService(processRunner.Object, Path.Join(FileService.GetTempPath(), "ffmpeg-unused"), applicationBase);
+
+            Assert.StartsWith("ffprobe is a static FFmpeg build", await service.GetLicenseAsync());
         }
 
         [Fact]
@@ -143,7 +177,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
             await File.WriteAllTextAsync(packaged, "packaged");
             var legacyDirectory = FileService.GetTempDirectory("ffprobe-legacy");
             await File.WriteAllTextAsync(Path.Join(legacyDirectory, ExecutableName), "downloaded by an older release");
-            var service = CreateService(new Mock<IProcessRunner>().Object, legacyDirectory, applicationBase);
+            var service = CreateService(new Mock<IProcessRunner>().AnswerFfprobeVersionCheck().Object, legacyDirectory, applicationBase);
 
             Assert.Equal(packaged, await service.GetFfprobePathAsync());
         }
@@ -155,7 +189,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
             var legacyDirectory = FileService.GetTempDirectory("ffprobe-legacy-only");
             var legacy = Path.Join(legacyDirectory, ExecutableName);
             await File.WriteAllTextAsync(legacy, "placed by hand");
-            var service = CreateService(new Mock<IProcessRunner>().Object, legacyDirectory, applicationBase);
+            var service = CreateService(new Mock<IProcessRunner>().AnswerFfprobeVersionCheck().Object, legacyDirectory, applicationBase);
 
             Assert.Equal(legacy, await service.GetFfprobePathAsync());
         }
@@ -171,7 +205,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
             await File.WriteAllTextAsync(packaged, "packaged");
             File.SetUnixFileMode(packaged, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
             var service = CreateService(
-                new Mock<IProcessRunner>(MockBehavior.Strict).Object,
+                new Mock<IProcessRunner>(MockBehavior.Strict).AnswerFfprobeVersionCheck().Object,
                 Path.Join(FileService.GetTempPath(), "ffmpeg-unused"),
                 applicationBase);
 
@@ -183,7 +217,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
             Assert.True(mode.HasFlag(UnixFileMode.OtherExecute), $"mode was {mode}");
         }
 
-        private static FfmpegService CreateService(
+        private FfmpegService CreateService(
             IProcessRunner processRunner,
             string legacyDirectory,
             string? applicationBaseDirectory)
@@ -194,43 +228,6 @@ namespace Listenarr.Tests.Features.Infrastructure.Ffmpeg.Installation
                 Mock.Of<IApplicationPathService>(service => service.FfmpegRootPath == legacyDirectory),
                 applicationBaseDirectory,
                 RuntimeInformation.RuntimeIdentifier);
-        }
-
-        private sealed class UnredactedProcessRunner : IProcessRunner
-        {
-            public async Task<ProcessResult> RunAsync(System.Diagnostics.ProcessStartInfo startInfo, int timeoutMs = 60000, CancellationToken cancellationToken = default)
-            {
-                using var process = System.Diagnostics.Process.Start(startInfo)
-                    ?? throw new InvalidOperationException("Process did not start");
-                var stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
-                var stderr = process.StandardError.ReadToEndAsync(cancellationToken);
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeout.CancelAfter(timeoutMs);
-                await process.WaitForExitAsync(timeout.Token);
-                return new ProcessResult(process.ExitCode, await stdout, await stderr, false);
-            }
-
-            public System.Diagnostics.Process StartProcess(System.Diagnostics.ProcessStartInfo startInfo)
-            {
-                throw new NotSupportedException();
-            }
-
-            public IDisposable RegisterTransientSensitive(IEnumerable<string> values)
-            {
-                throw new NotSupportedException();
-            }
-        }
-
-        private static string RepositoryRoot()
-        {
-            var directory = new DirectoryInfo(AppContext.BaseDirectory);
-            while (directory != null && !File.Exists(Path.Join(directory.FullName, "listenarr.slnx")))
-            {
-                directory = directory.Parent;
-            }
-
-            Assert.NotNull(directory);
-            return directory.FullName;
         }
 
         private static byte[] BuildSilentWav(int sampleRate, int seconds)
