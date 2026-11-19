@@ -2,10 +2,10 @@
 
 This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
-    base:        bfbb0526e378d406bd136ecda619d09693739647
-    base short:  bfbb0526e
-    patches:     741
-    version:     1.9.1+m4bard.741
+    base:        537137e99d62bd4ff186e135a6f361312c9bcf4e
+    base short:  537137e99
+    patches:     743
+    version:     1.9.2+m4bard.743
 
 ## Patches, oldest first
 
@@ -14,7 +14,7 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     94aeb9723  #106  fix(metadata): populate SeriesAsin from the Audnexus series record
     cfb86cb54  #106  fix(metadata): carry the Audnexus series list, with identifiers, through the product lookup
     eed12c868  #106  test(metadata): pin what a blank Audnexus series ASIN stores
-    d48745be7  #43   fix(ffmpeg): point macOS at evermeet's ffprobe archive, not its ffmpeg one
+    d48745be7  #43   fix(ffmpeg): point macOS at evermeet's ffprobe archive, not its ffmpeg one [superseded by upstream #786, not carried]
     00ed29c1d  #23   fix(qbittorrent): one unreadable torrent should not truncate the queue poll
     5bfabf8d1  #23   fix(qbittorrent): let a client that stops answering fail the poll
     23f19d2f4  #23   fix(qbittorrent): quieten the per-torrent skip and escape the hash
@@ -499,7 +499,7 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     d761ae605  #218  fix(scan): decline folder-attributed files whose tags name another book
     544b56408  #218  test(scan): update probe-count and swap-timing expectations for the new pass
     0ce4d9480  #218  test(scan): give the tracked-file guard a real identity and a Times.Never
-    0469b8546  #3    791 option D (NuGet ffprobe) composed onto the stack, for validation on the install
+    0469b8546  #3    791 option D (NuGet ffprobe) composed onto the stack, for validation on the install [merged upstream as #786, not carried]
     ff224d345  #309  test: assert FailedDownloadAutoSearch defaults to true
     0a0b86694  #309  fix: default FailedDownloadAutoSearch to true, matching the *arr family
     e4ad1d65b  #298  test(redaction): reproduce ffprobe JSON corruption from RedactText fallback
@@ -750,6 +750,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     6a25c15a7  #-    stack: regenerate the Playwright API types for the stack's API surface
     fed713305  #-    stack: manifest for bfbb0526e plus 739 patches
     ec3f02125  #-    stack: the new backend integration tests create their quality profile with upgrades off
+    0bf42ffb1  #-    stack: manifest for bfbb0526e plus 741 patches
+    dc1e01f4c  #-    stack: merge v1.9.2-canary
 
 ## How this stack was built
 
@@ -779,7 +781,7 @@ merged. Where the stack already carried a PR in its own shape, the conflict was 
 it; the "stack:" commits after a merge remove the same duplicates as then, or point the PR's tests at this stack's
 search surface. PRs #849, #924, #925, #941, #954, #1012, #1018, #1019 and #1151 are carried as content and not
 merged, so their heads are not ancestors; the same holds for the fix branch of upstream issue #958
-(local/upbase-174-958). Not carried: PR #786 (replaced by the NuGet ffprobe rework), the fix branch of upstream issue
+(local/upbase-174-958). Not carried: PR #786 (replaced by the NuGet ffprobe rework, which upstream has since merged as #786), the fix branch of upstream issue
 #981 (local/upbase-174-981, conflicts with the search rework), PR #987 (carried by #1016), PR #1152 (superseded by
 the search rework).
 
@@ -836,6 +838,21 @@ test that needs the contributor endpoint to fail adds that failure in front of t
 pointed at the new mock namespaces, the Playwright API types are regenerated for the stack's API surface, and the new backend integration tests create their quality profile with upgrades off, because the stack refuses a profile whose cutoff names no allowed quality.
 fe/eslint-report.json, which upstream deleted, is kept: the leak scanner blocks any commit that removes its lines.
 
+The 1.9.1 stack ends at its manifest commit, "stack: manifest for bfbb0526e plus 741 patches", which is the row before
+the 1.9.2 merge. Upstream canary 1.9.2 (537137e99) is then merged in ("stack: merge v1.9.2-canary"), so the 1.9.1 stack
+is an ancestor of this one and every row above it is the 1.9.1 stack's own commit. 1.9.2 brings upstream's merged
+ffprobe rework (#786: Openur.FFprobeStatic as a per-platform NuGet asset, no runtime download, a -version check on the
+resolved binary, a containment check before chmod, licence texts and a publish-time check) and the version bump. The
+stack had carried its own earlier copy of that rework as row 0469b8546 (the NuGet ffprobe rework composed onto the stack)
+and a macOS ffprobe URL fix (d48745be7) for the download path that rework removed; both rows stay in the history above
+and are marked merged upstream, not carried: the merge takes upstream's version of every file they touched, so the tree
+holds upstream's #786 and none of the stack's older copy. The merge had fifteen conflicts, all in files of that rework
+or beside it. The ffprobe sources, their tests, the documentation and the lock for the API project take upstream's
+version; the stack's pieces beside them are kept: the Dockerfile's version build argument (upstream's prepare-ffprobe
+step follows it), the MailKit reference in the infrastructure project, the stack's metadata refresh registrations in
+MetadataRegistrationExtensions (upstream's TimeProvider registration added), and the API project's lock regenerated for
+the stack's packages.
+
 ## Known differences from the 1.7.4 stack
 
 - A fresh install stores MaxConcurrentIndexerSearches=0. Rolled back to the 1.7.4 stack, such an install searches
@@ -846,10 +863,10 @@ fe/eslint-report.json, which upstream deleted, is kept: the leak scanner blocks 
   escalation and the operator fan-out setting are gone. The gate described above replaces them.
 - #914 is the older head: migration 20261112054145. Its current head renames the migration to 20261116120000 for
   the same column, so a later upgrade to it adds a second migration and needs its own migration check.
-- The ffprobe checksum URL redaction from #1016 has no call site, because the NuGet ffprobe package replaced the
-  download path. If that rework is dropped, the redaction must come back with the download path.
+- The ffprobe checksum URL redaction from #1016 has no call site, because the NuGet ffprobe package (now upstream's
+  #786) replaced the download path.
 
 Migrations: the newest fork migration is 20261114075422 (the request state table). #1023 stays at 20261112054132,
 the fork-local #914 at 20261112054145, and #1151 at 20261114004926. Upstream added no migration since
-20261029020400, and 1.8.5, 1.8.6, 1.9.0 and 1.9.1 add none. The history repoint for a database that ran an earlier stack is recomputed
+20261029020400, and 1.8.5, 1.8.6, 1.9.0, 1.9.1 and 1.9.2 add none. The history repoint for a database that ran an earlier stack is recomputed
 with this build's upgrade packet.
