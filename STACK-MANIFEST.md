@@ -4,8 +4,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
     base:        537137e99d62bd4ff186e135a6f361312c9bcf4e
     base short:  537137e99
-    patches:     743
-    version:     1.9.2+m4bard.743
+    patches:     744
+    version:     1.9.2+m4bard.744
 
 ## Patches, oldest first
 
@@ -752,6 +752,7 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     ec3f02125  #-    stack: the new backend integration tests create their quality profile with upgrades off
     0bf42ffb1  #-    stack: manifest for bfbb0526e plus 741 patches
     dc1e01f4c  #-    stack: merge v1.9.2-canary
+    f809ba909  #-    stack: manifest for 537137e99 plus 743 patches
 
 ## How this stack was built
 
