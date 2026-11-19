@@ -2,10 +2,10 @@
 
 This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
-    base:        537137e99d62bd4ff186e135a6f361312c9bcf4e
-    base short:  537137e99
-    patches:     744
-    version:     1.9.2+m4bard.744
+    base:        8369487a743021bf020d2128598225b5de168450
+    base short:  8369487a7
+    patches:     746
+    version:     1.10.3+m4bard.746
 
 ## Patches, oldest first
 
@@ -51,8 +51,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     139868a9a  #35   fix(qbittorrent): tell a refused release apart from a failed submission
     19a082130  #35   test(downloads): pin the controller half of the 409 change
     758777ce2  #35   fix(downloads): answer a refused release with 409 on the manual send path
-    f8c294773  #160  fix(config): overlay a posted startup config onto the file instead of replacing it
-    379c5abda  #160  fix(fe): do not post a startup config the settings view never loaded
+    f8c294773  #160  fix(config): overlay a posted startup config onto the file instead of replacing it [merged upstream as #1119, not carried]
+    379c5abda  #160  fix(fe): do not post a startup config the settings view never loaded [merged upstream as #1119, not carried]
     9a7ab43e7  #64   feat(settings): add a URL Base field to General settings
     0abce6bd5  #64   feat(settings): tie the URL Base warning to the field it is about
     94ad62ba3  #64   feat(settings): show an empty URL Base box when the stored value is the site root
@@ -77,13 +77,13 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     0e008367a  #62   fix(downloads): hold only a first transition into Completed
     e0ee1f86c  #62   test(downloads): scope the completion-stability save to the one test that needs it
     636dba774  #65   fix(quality-profiles): stop hiding Maximum Age, and load a profile's qualities
-    e5c42f8b0  #46   fix(search): read Indexer.MinimumAge and Indexer.MaximumSize, and measure age in UTC
-    cdcb3261e  #46   refactor(search): split the scorer, and test the UTC date parse directly
-    eecb047cd  #46   test(search): pin that the indexer size ceiling applies to Usenet too
-    eb3f3dcec  #46   test(search): make the new parse tests follow the repository conventions
-    016c797f5  #46   fix(scoring): resolve indexers once per batch, not once per result in parallel
-    3e0edba1b  #46   test(scoring): assert the pre-resolved indexer actually reaches the scorer
-    aac7c95fc  #46   fix(search): compute the profile size gates in long, not int
+    e5c42f8b0  #46   fix(search): read Indexer.MinimumAge and Indexer.MaximumSize, and measure age in UTC [merged upstream as #1019, not carried]
+    cdcb3261e  #46   refactor(search): split the scorer, and test the UTC date parse directly [merged upstream as #1019, not carried]
+    eecb047cd  #46   test(search): pin that the indexer size ceiling applies to Usenet too [merged upstream as #1019, not carried]
+    eb3f3dcec  #46   test(search): make the new parse tests follow the repository conventions [merged upstream as #1019, not carried]
+    016c797f5  #46   fix(scoring): resolve indexers once per batch, not once per result in parallel [merged upstream as #1019, not carried]
+    3e0edba1b  #46   test(scoring): assert the pre-resolved indexer actually reaches the scorer [merged upstream as #1019, not carried]
+    aac7c95fc  #46   fix(search): compute the profile size gates in long, not int [merged upstream as #1019, not carried]
     368e86f94  #47   fix(download-clients): make the Priority dropdown speak the planners' vocabulary
     1e74a4c17  #47   test(download-clients): drop two usings the global usings already cover
     c4a7ffd45  #47   fix(download-clients): read a stored legacy priority back as Normal
@@ -125,8 +125,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     9d5c2a761  #86   fix(collection): apply the language preference to library books, not just suggestions
     3528cf119  #110  fix(import): match blacklisted extensions without regard to case
     dbe603cfc  #112  fix(ui): match System recent-log severity classes to the stylesheet
-    104231cfa  #20   fix(search): derive one indexer query title, shared by both search paths
-    d79a747cd  #20   fix(search): leave the series out of the indexer query, as Readarr does
+    104231cfa  #20   fix(search): derive one indexer query title, shared by both search paths [merged upstream as #1019, not carried]
+    d79a747cd  #20   fix(search): leave the series out of the indexer query, as Readarr does [merged upstream as #1019, not carried]
     20b6cf36f  #66   fix(downloads): give the queue a control that removes a terminal download
     7f40f23e8  #66   fix(downloads): tie a processing job's retention to the download it explains
     fc4cfbe8e  #99   fix(authors): stop attributing one author's ASIN to every co-author
@@ -726,7 +726,7 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     cfbddc5bd  #-    stack: merge #1017 (upstream PR head 203aaa622)
     c6d261551  #-    stack: merge #1023 (upstream PR head dd2da9409)
     97dded410  #-    stack: point #1023's declared-attribute scoring tests at this stack's search surface
-    8f0eeeb34  #-    stack: merge #1119 (upstream PR head d0f729866)
+    8f0eeeb34  #-    stack: merge #1119 (upstream PR head d0f729866) [merged upstream as #1119, not carried]
     9392ff349  #-    stack: merge #1155 (upstream PR head ea2f349e7)
     41fd84eda  #-    stack: drop the second ApplicationConflictException catch the #1155 merge added
     9fc7291aa  #-    stack: merge #1164 (upstream PR head 639f0ca20)
@@ -753,6 +753,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     0bf42ffb1  #-    stack: manifest for bfbb0526e plus 741 patches
     dc1e01f4c  #-    stack: merge v1.9.2-canary
     f809ba909  #-    stack: manifest for 537137e99 plus 743 patches
+    c8eee173f  #-    stack: restore upstream's StartupConfig comment
+    e0e4fceb8  #-    stack: merge v1.10.3-canary
 
 ## How this stack was built
 
@@ -780,8 +782,8 @@ PRs, merged at their current heads. #975 and #978 are upstream issues, not PRs, 
 fixes are carried from the local/upbase-174-975 and local/upbase-174-978 branches, at the heads the 1.7.4 stack
 merged. Where the stack already carried a PR in its own shape, the conflict was resolved as the 1.7.4 stack resolved
 it; the "stack:" commits after a merge remove the same duplicates as then, or point the PR's tests at this stack's
-search surface. PRs #849, #924, #925, #941, #954, #1012, #1018, #1019 and #1151 are carried as content and not
-merged, so their heads are not ancestors; the same holds for the fix branch of upstream issue #958
+search surface. PRs #849, #924, #925, #941, #954, #1012, #1018 and #1151 are carried as content and not
+merged, so their heads are not ancestors (#1019 was carried the same way until upstream merged it); the same holds for the fix branch of upstream issue #958
 (local/upbase-174-958). Not carried: PR #786 (replaced by the NuGet ffprobe rework, which upstream has since merged as #786), the fix branch of upstream issue
 #981 (local/upbase-174-981, conflicts with the search rework), PR #987 (carried by #1016), PR #1152 (superseded by
 the search rework).
@@ -854,6 +856,24 @@ step follows it), the MailKit reference in the infrastructure project, the stack
 MetadataRegistrationExtensions (upstream's TimeProvider registration added), and the API project's lock regenerated for
 the stack's packages.
 
+The 1.9.2 stack ends at "stack: restore upstream's StartupConfig comment", the row before the 1.10.3 merge, which
+carries its manifest ("537137e99 plus 744 patches"). Upstream canary 1.10.3 (8369487a7) is then merged in ("stack: merge
+v1.10.3-canary"), so the 1.9.2 stack is an ancestor of this one and every row above it is the 1.9.2 stack's own commit.
+1.10.3 is four releases: 1.10.0 brings #841 (Date Added sorting and filtering, with the migration
+20261119022628_AddAudiobookAddedDate and a startup backfill of the date from library history and file records), 1.10.1
+brings #1177 (a timeout in a debug broadcast no longer aborts a book's automatic search), 1.10.2 brings our #1019
+(indexer query building and result gating) and 1.10.3 brings our #1119 (a posted startup config is merged onto
+config.json), each with its version bump. #1019 and #1119 are therefore merged upstream, not carried: their rows above
+(the #1019 content of items #46 and #20, the #1119 patches f8c294773 and 379c5abda, and the merge of the #1119 PR head,
+8f0eeeb34) stay in the history and are marked so, and the tree holds upstream's merged version of every file they
+touched. Where the stack had built on that content (the rejection gates split out of the scorer, one quality ladder,
+the music-release gate, the UrlBase check on a posted startup config), the stack's later changes are kept. #1177 is
+ported onto this stack's automatic search, which runs in AutomaticSearchProcessor, AutomaticSearchBookSearch and
+AutomaticSearchAcquisition: both debug broadcasts now contain every failure except a shutdown of the cycle, and
+upstream's tests for it are rewritten on the stack's sweep harness. The new migration sorts after every migration of
+this stack, and its Designer is rewritten as the stack's cumulative model at that position (the snapshot's model, plus
+the Indexers.Tags column every database still has); the Date Added backfill runs under its own migration gate, like the stack's other startup repairs.
+
 ## Known differences from the 1.7.4 stack
 
 - A fresh install stores MaxConcurrentIndexerSearches=0. Rolled back to the 1.7.4 stack, such an install searches
@@ -868,6 +888,7 @@ the stack's packages.
   #786) replaced the download path.
 
 Migrations: the newest fork migration is 20261114075422 (the request state table). #1023 stays at 20261112054132,
-the fork-local #914 at 20261112054145, and #1151 at 20261114004926. Upstream added no migration since
-20261029020400, and 1.8.5, 1.8.6, 1.9.0, 1.9.1 and 1.9.2 add none. The history repoint for a database that ran an earlier stack is recomputed
+the fork-local #914 at 20261112054145, and #1151 at 20261114004926. Upstream added no migration between
+20261029020400 and 1.9.2 (1.8.5, 1.8.6, 1.9.0, 1.9.1 and 1.9.2 add none); 1.10.0 adds 20261119022628_AddAudiobookAddedDate,
+which sorts after every fork migration, so a database on the 1.9.2 stack applies it as the one pending migration. The history repoint for a database that ran an earlier stack is recomputed
 with this build's upgrade packet.
