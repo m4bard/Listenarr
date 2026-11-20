@@ -2,10 +2,10 @@
 
 This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
-    base:        8369487a743021bf020d2128598225b5de168450
-    base short:  8369487a7
-    patches:     746
-    version:     1.10.3+m4bard.746
+    base:        e4fe947c97eacfbba852ee82c3ac9552cab14808
+    base short:  e4fe947c9
+    patches:     749
+    version:     1.10.4+m4bard.749
 
 ## Patches, oldest first
 
@@ -755,6 +755,9 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     f809ba909  #-    stack: manifest for 537137e99 plus 743 patches
     c8eee173f  #-    stack: restore upstream's StartupConfig comment
     e0e4fceb8  #-    stack: merge v1.10.3-canary
+    9e82e0142  #-    stack: manifest for 8369487a7 plus 746 patches
+    d59d00b86  #-    stack: merge v1.10.4-canary
+    db92a9d85  #-    tests: name the timeout retry case for the stack's failure backoff
 
 ## How this stack was built
 
@@ -776,7 +779,7 @@ requests per indexer and 8 overall with 2 s spacing; and a scheduled cycle searc
 requests. The stack's query plan is not carried; it comes back after the request-boundary PR
 lands.
 
-The merges ("stack: merge #N") bring in #930, #975, #978, #1015, #1017, #1023, #1119, #1155 and #1164 in that
+The merges ("stack: merge #N") bring in #930, #975, #978, #1015, #1017, #1023, #1119 (since merged upstream), #1155 and #1164 in that
 order, then #1016, so each merged head is an ancestor of this stack. All of them except #975 and #978 are upstream
 PRs, merged at their current heads. #975 and #978 are upstream issues, not PRs, so they have no upstream head: their
 fixes are carried from the local/upbase-174-975 and local/upbase-174-978 branches, at the heads the 1.7.4 stack
@@ -873,6 +876,13 @@ AutomaticSearchAcquisition: both debug broadcasts now contain every failure exce
 upstream's tests for it are rewritten on the stack's sweep harness. The new migration sorts after every migration of
 this stack, and its Designer is rewritten as the stack's cumulative model at that position (the snapshot's model, plus
 the Indexers.Tags column every database still has); the Date Added backfill runs under its own migration gate, like the stack's other startup repairs.
+
+The 1.10.3 stack ends at its manifest commit, "stack: manifest for 8369487a7 plus 746 patches", which is the row before
+the 1.10.4 merge. Upstream canary 1.10.4 (e4fe947c9) is then merged in ("stack: merge v1.10.4-canary"), so the 1.10.3
+stack is an ancestor of this one and every row above it is the 1.10.3 stack's own commit. 1.10.4 brings the AsyncKeyedLock
+update to 8.1.3 (the package version and every lock file), an ignore rule for the fake providers' local launch profile,
+and the version bump. It adds no migration and had no conflicts: the stack's own package entries (MailKit and the
+System.Security.Cryptography.Pkcs pin) are additive in each lock file and were left as they were.
 
 ## Known differences from the 1.7.4 stack
 
