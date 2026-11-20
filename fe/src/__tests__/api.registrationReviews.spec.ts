@@ -19,7 +19,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 
 const reviews = [{ operationId: 'a' }, { operationId: 'b' }]
 
-const listWith = async (headers: Record<string, string>) => {
+const listWith = async (headers: Record<string, string>, skip?: number) => {
   vi.resetModules()
   vi.stubGlobal(
     'fetch',
@@ -33,7 +33,7 @@ const listWith = async (headers: Record<string, string>) => {
     ),
   )
   const actual = await vi.importActual<typeof import('@/services/api')>('@/services/api')
-  return actual.apiService.getRegistrationReviews()
+  return actual.apiService.getRegistrationReviews(skip)
 }
 
 describe('ApiService getRegistrationReviews', () => {
@@ -69,5 +69,14 @@ describe('ApiService getRegistrationReviews', () => {
   ])('falls back to the row count when the header is %s', async (_label, headers) => {
     const result = await listWith(headers)
     expect(result.total).toBe(2)
+  })
+
+  it('sends skip only when it is positive', async () => {
+    await listWith({}, 200)
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain(
+      '/file-registration-recovery?skip=200',
+    )
+    await listWith({})
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).not.toContain('skip')
   })
 })

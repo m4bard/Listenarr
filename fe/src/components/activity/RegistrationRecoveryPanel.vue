@@ -14,6 +14,14 @@
     <p v-if="reviews.length" role="status">
       Showing {{ reviews.length }} of {{ total }} operations.
     </p>
+    <button
+      v-if="reviews.length < total"
+      class="btn btn-secondary"
+      :disabled="busy"
+      @click="loadMore"
+    >
+      Load more
+    </button>
     <ul>
       <li v-for="review in reviews" :key="review.operationId">
         {{ review.action }} · Book {{ review.audiobookId ?? 'unknown' }} · {{ review.state }}
@@ -119,6 +127,21 @@ async function refresh() {
   }
 }
 
+async function loadMore() {
+  busy.value = true
+  error.value = ''
+  try {
+    const list = await apiService.getRegistrationReviews(reviews.value.length)
+    const known = new Set(reviews.value.map((r) => r.operationId))
+    reviews.value = [...reviews.value, ...list.reviews.filter((r) => !known.has(r.operationId))]
+    total.value = list.total
+  } catch {
+    error.value = 'Could not load more recovery operations. Try again.'
+  } finally {
+    busy.value = false
+  }
+}
+
 async function inspect(id: string) {
   busy.value = true
   error.value = ''
@@ -144,8 +167,15 @@ async function resolve() {
       selected.value.reviewToken,
       note.value,
     )
-    const list = await apiService.getRegistrationReviews()
-    reviews.value = list.reviews
+    const loaded = reviews.value.length
+    const reloaded: RegistrationReview[] = []
+    let list = await apiService.getRegistrationReviews()
+    reloaded.push(...list.reviews)
+    while (reloaded.length < loaded && list.reviews.length) {
+      list = await apiService.getRegistrationReviews(reloaded.length)
+      reloaded.push(...list.reviews)
+    }
+    reviews.value = reloaded
     total.value = list.total
   } catch {
     selected.value = null
