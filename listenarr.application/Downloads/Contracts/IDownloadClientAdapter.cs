@@ -87,6 +87,17 @@ namespace Listenarr.Application.Downloads.Contracts
         /// <returns>List of updated values for the given IDs</returns>
         Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, List<string> ids, CancellationToken ct = default);
 
+        /// <summary>
+        /// Fetch updates for the given IDs and say whether every item the client listed is in them.
+        /// Default implementation treats <see cref="GetQueueAsync(DownloadClientConfiguration, List{string}, CancellationToken)"/>
+        /// as complete, for clients that do not skip items they cannot read.
+        /// </summary>
+        /// <param name="client">Download client configuration</param>
+        /// <param name="ids">List of IDs to get updates from</param>
+        /// <param name="ct"></param>
+        async Task<DownloadClientQueueSnapshot> GetQueueSnapshotAsync(DownloadClientConfiguration client, List<string> ids, CancellationToken ct = default)
+            => DownloadClientQueueSnapshot.Complete(await GetQueueAsync(client, ids, ct));
+
         Task<List<DownloadClientItem>> GetItemsAsync(DownloadClientConfiguration client, CancellationToken ct = default);
 
         /// <summary>

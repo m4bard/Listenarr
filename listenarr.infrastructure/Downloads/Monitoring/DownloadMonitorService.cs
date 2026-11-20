@@ -203,8 +203,8 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                 try
                 {
                     var previousDownloads = clientDownloads.Select(item => item.Clone()).ToList();
-                    var reportedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    var updatedDownloads = await downloadClientGateway.FetchDownloadsAsync(client, clientDownloads, cancellationToken, reportedIds);
+                    var pollReport = new DownloadPollReport();
+                    var updatedDownloads = await downloadClientGateway.FetchDownloadsAsync(client, clientDownloads, cancellationToken, pollReport);
 
                     foreach (Download download in updatedDownloads)
                     {
@@ -212,14 +212,14 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                         var previousDownload = previousDownloads.FirstOrDefault(d => d.Id == download.Id);
 
                         if (previousDownload != null
-                            && !ReleaseIfGoneWhileHeld(download, previousDownload, reportedIds)
-                            && !HasSettledAsComplete(download, previousDownload, stabilityWindow))
+                            && HoldsPreviousStatus(download, previousDownload, pollReport, stabilityWindow))
                         {
                             // Hold the transition, not the update. Progress and size still persist,
                             // so the row stays current; only finalization waits. Reverting the
                             // status rather than skipping the write also means the next cycle sees
                             // the same transition again and can let it through once the window has
-                            // passed, without anything else needing to remember it is pending.
+                            // passed. The same write persists when the client first reported the
+                            // completion, which is what survives a restart.
                             download.SetStatus(previousDownload.Status);
                             await downloadService.UpdateAsync(download);
                             continue;
