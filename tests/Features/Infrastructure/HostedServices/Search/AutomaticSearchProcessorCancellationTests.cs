@@ -95,7 +95,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
         }
 
         [Fact]
-        public async Task RunCycleAsync_DownloadClientTimesOut_RetriesTheBookNextCycle()
+        public async Task RunCycleAsync_DownloadClientTimesOut_RetriesTheBookAfterTheFailureBackoff()
         {
             // Given: the download client times out on the first submission and accepts the second
             Downloads.Reset();
