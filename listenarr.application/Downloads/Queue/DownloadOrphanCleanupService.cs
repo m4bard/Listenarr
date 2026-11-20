@@ -164,6 +164,19 @@ namespace Listenarr.Application.Downloads.Queue
                 return null;
             }
 
+            if (download.GetCompletionObservedAt() != null)
+            {
+                // The client reported this download complete and the stability window is holding
+                // its finalization, which leaves the row in its pre-completion status. The monitor
+                // finalizes it once a complete poll no longer lists it, so removing it here would
+                // drop a completed download whose files are still on disk.
+                logger.LogDebug(
+                    "Skipping orphan cleanup for download {DownloadId} '{Title}': its completion is pending finalization",
+                    download.Id,
+                    download.Title);
+                return null;
+            }
+
             var age = now - download.StartedAt;
             if (age < OrphanedDownloadGracePeriod)
             {
