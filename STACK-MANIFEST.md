@@ -4,8 +4,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
     base:        faf995e8ce80ba43153314e0f544b7246e9a8306
     base short:  faf995e8c
-    patches:     752
-    version:     1.10.5+m4bard.752
+    patches:     754
+    version:     1.10.5+m4bard.754
 
 ## Patches, oldest first
 
@@ -761,6 +761,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     27a3da625  #-    stack: manifest for e4fe947c9 plus 749 patches
     63e342c80  #-    stack: merge v1.10.5-canary (#1203) and reconcile the stack's download patches
     790689930  #-    tests: history written after guarded orphan delete; NZBGet unbounded presence read
+    9b49c83a2  #-    stack: manifest for faf995e8c plus 752 patches
+    27fc348dd  #-    stack: keep two files under the 500-line cap and give the Transmission category tests a response per request
 
 ## How this stack was built
 
