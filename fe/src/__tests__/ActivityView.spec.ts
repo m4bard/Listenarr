@@ -503,11 +503,20 @@ describe('ActivityView', () => {
 
     const wrapper = await mountActivityView()
     const vm = wrapper.vm as unknown as ActivityViewVm
-    const item = vm.allActivityItems.find((entry) => entry.id === 'ext-2')
+    // The list hides an unavailable client's rows, so a removal can only reach the guard
+    // from a row that was already open when the client dropped out. Open the dialog on one.
+    expect(vm.allActivityItems.find((entry) => entry.id === 'ext-2')).toBeUndefined()
+    const item = {
+      id: 'ext-2',
+      title: 'External In Flight',
+      status: 'downloading',
+      progress: 40,
+      downloadClient: 'qbittorrent',
+      downloadClientId: 'qbittorrent',
+      downloadClientType: 'external',
+    }
 
-    expect(item).toBeDefined()
-
-    await vm.removeFromQueue(item!)
+    await vm.removeFromQueue(item as never)
     expect(vm.clientHasQueueEntry).toBe(null)
 
     await vm.confirmRemove()
