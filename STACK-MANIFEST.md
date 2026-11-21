@@ -2,10 +2,10 @@
 
 This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
-    base:        e4fe947c97eacfbba852ee82c3ac9552cab14808
-    base short:  e4fe947c9
-    patches:     749
-    version:     1.10.4+m4bard.749
+    base:        faf995e8ce80ba43153314e0f544b7246e9a8306
+    base short:  faf995e8c
+    patches:     752
+    version:     1.10.5+m4bard.752
 
 ## Patches, oldest first
 
@@ -758,6 +758,9 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     9e82e0142  #-    stack: manifest for 8369487a7 plus 746 patches
     d59d00b86  #-    stack: merge v1.10.4-canary
     db92a9d85  #-    tests: name the timeout retry case for the stack's failure backoff
+    27a3da625  #-    stack: manifest for e4fe947c9 plus 749 patches
+    63e342c80  #-    stack: merge v1.10.5-canary (#1203) and reconcile the stack's download patches
+    790689930  #-    tests: history written after guarded orphan delete; NZBGet unbounded presence read
 
 ## How this stack was built
 
@@ -883,6 +886,17 @@ stack is an ancestor of this one and every row above it is the 1.10.3 stack's ow
 update to 8.1.3 (the package version and every lock file), an ignore rule for the fake providers' local launch profile,
 and the version bump. It adds no migration and had no conflicts: the stack's own package entries (MailKit and the
 System.Security.Cryptography.Pkcs pin) are additive in each lock file and were left as they were.
+
+The 1.10.4 stack ends at its manifest commit, "stack: manifest for e4fe947c9 plus 749 patches", which is the row before
+the 1.10.5 merge. Upstream canary 1.10.5 (faf995e8c) is then merged in ("stack: merge v1.10.5-canary (#1203) and
+reconcile the stack's download patches"), so the 1.10.4 stack is an ancestor of this one. 1.10.5 is upstream's #1203
+(re-grabs after a client-side deletion: guarded client-poll writes, orphan removal that leaves a row the poll changed,
+a category-independent lookup of tracked downloads, and a poll that reports only the downloads the client listed)
+plus the version bump. It adds no migration. The merge had nine textual conflicts, all in the download pipeline, and
+one conflict the merge could not show: the stack's release of a held completion whose client item has gone depended on
+the poll returning every download, so it now runs over the polled downloads in its own step before orphan cleanup. The
+stack's History "Removed" entry is now written after the guarded delete, and the NZBGet history limit does not apply to
+the tracked-presence lookup. The commit after the merge adds the two tests that pin those last two points.
 
 ## Known differences from the 1.7.4 stack
 
