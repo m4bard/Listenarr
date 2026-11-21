@@ -4,8 +4,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
     base:        dc14be034ad80e6a04e4318470f327e246c26971
     base short:  dc14be034
-    patches:     766
-    version:     1.10.6+m4bard.766
+    patches:     768
+    version:     1.10.6+m4bard.768
 
 ## Patches, oldest first
 
@@ -775,6 +775,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     849c13906  #-    fix(collection): the author page's series section monitors with the selected profile
     4ba9b3226  #-    test(collection): the series-identity page spec offers a default quality profile
     78f741d08  #-    test(quality-profiles): create the #1205 fixture profiles with upgrades off
+    13a8c348f  #-    stack: manifest for dc14be034 plus 766 patches
+    f339a34eb  #-    test(activity): open the unavailable-client delete on a row the list no longer shows
 
 ## How this stack was built
 
