@@ -39,6 +39,9 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
                 .UseInMemoryDatabase(databaseName: $"author-monitor-cachekey-{Guid.NewGuid():N}")
                 .Options;
             await using var dbContext = new ListenArrDbContext(dbOptions);
+            var defaultProfile = new QualityProfile { Id = 1, Name = "Standard", IsDefault = true };
+            dbContext.QualityProfiles.Add(defaultProfile);
+            await dbContext.SaveChangesAsync();
 
             var authorCatalogService = new Mock<IAuthorCatalogService>();
             authorCatalogService
@@ -51,7 +54,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
             var qualityProfileService = new Mock<IQualityProfileService>();
             qualityProfileService
                 .Setup(s => s.GetDefaultAsync())
-                .ReturnsAsync(new QualityProfile { Id = 1, Name = "Standard", IsDefault = true });
+                .ReturnsAsync(defaultProfile);
 
             var service = new AuthorMonitoringService(
                 new EfMonitoredAuthorRepository(dbContext),

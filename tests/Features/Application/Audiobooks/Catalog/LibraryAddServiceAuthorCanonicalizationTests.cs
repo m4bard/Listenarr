@@ -53,6 +53,11 @@ public sealed class LibraryAddServiceAuthorCanonicalizationTests : BaseTests
             .WithIsDefault()
             .WithPath(FileService.GetTempDirectory("listenarr-canonicalization"))
             .Build());
+
+        // Adds require a resolvable quality profile.
+        var profile = new QualityProfileBuilder().WithName("Standard").Build();
+        profile.IsDefault = true;
+        await _qualityProfileRepository.AddAsync(profile);
     }
 
     private async Task<Audiobook> AddAsync(string title, params string[] authors)

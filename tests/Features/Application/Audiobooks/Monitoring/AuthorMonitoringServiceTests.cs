@@ -338,6 +338,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
                 .Options;
 
             await using var dbContext = new ListenArrDbContext(dbOptions);
+            dbContext.QualityProfiles.Add(new QualityProfile { Id = 1, Name = "Standard", IsDefault = true });
+            await dbContext.SaveChangesAsync();
 
             var authorCatalogService = new Mock<IAuthorCatalogService>();
             authorCatalogService
@@ -426,6 +428,8 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
                 .Options;
 
             await using var dbContext = new ListenArrDbContext(dbOptions);
+            dbContext.QualityProfiles.Add(new QualityProfile { Id = 1, Name = "Standard", IsDefault = true });
+            await dbContext.SaveChangesAsync();
 
             var authorCatalogService = new Mock<IAuthorCatalogService>();
             authorCatalogService
