@@ -321,6 +321,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
             Init(services => services
                 .WithSingleton(_seriesCatalogService.Object)
                 .WithSingleton(_imageCacheService.Object));
+            await AddDefaultQualityProfileAsync();
 
             var rootPath = FileService.GetTempDirectory("series-monitoring-asin");
 
@@ -385,6 +386,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
             Init(services => services
                 .WithSingleton(_seriesCatalogService.Object)
                 .WithSingleton(_libraryAddService.Object));
+            await AddDefaultQualityProfileAsync();
 
             LibraryAddOperationRequest? capturedRequest = null;
             _libraryAddService

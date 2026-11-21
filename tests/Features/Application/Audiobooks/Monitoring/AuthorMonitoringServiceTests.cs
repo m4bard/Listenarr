@@ -394,6 +394,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
                 audiobooksRepo,
                 authorCatalogService.Object,
                 libraryAddService.Object,
+                CreateQualityProfileService(),
                 Mock.Of<ILogger<AuthorMonitoringService>>());
 
             var result = await service.MonitorAuthorAsync(new MonitorAuthorRequest
@@ -477,6 +478,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
                 audiobooksRepo,
                 authorCatalogService.Object,
                 libraryAddService.Object,
+                CreateQualityProfileService(),
                 Mock.Of<ILogger<AuthorMonitoringService>>());
 
             var result = await service.MonitorAuthorAsync(new MonitorAuthorRequest

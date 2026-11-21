@@ -43,6 +43,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
                 new AudiobookRepository(dbContext),
                 authorCatalogService.Object,
                 libraryAddService.Object,
+                Mock.Of<IQualityProfileService>(),
                 Mock.Of<ILogger<AuthorMonitoringService>>());
         }
 

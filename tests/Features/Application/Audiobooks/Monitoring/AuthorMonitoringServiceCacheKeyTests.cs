@@ -48,12 +48,17 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
                     Author = new AuthorLookupItem { Asin = "AUTHORTESTCACHE2", Name = "Jane Doe" },
                     Books = new List<AudibleSearchResult>(),
                 });
+            var qualityProfileService = new Mock<IQualityProfileService>();
+            qualityProfileService
+                .Setup(s => s.GetDefaultAsync())
+                .ReturnsAsync(new QualityProfile { Id = 1, Name = "Standard", IsDefault = true });
 
             var service = new AuthorMonitoringService(
                 new EfMonitoredAuthorRepository(dbContext),
                 new AudiobookRepository(dbContext),
                 authorCatalogService.Object,
                 Mock.Of<ILibraryAddService>(),
+                qualityProfileService.Object,
                 Mock.Of<ILogger<AuthorMonitoringService>>());
 
             var result = await service.MonitorAuthorAsync(new MonitorAuthorRequest
@@ -90,6 +95,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
                 new AudiobookRepository(dbContext),
                 Mock.Of<IAuthorCatalogService>(),
                 Mock.Of<ILibraryAddService>(),
+                Mock.Of<IQualityProfileService>(),
                 Mock.Of<ILogger<AuthorMonitoringService>>());
 
             var found = await service.GetMonitoredAuthorAsync("Jane Doe - introduction", "us", "english");
