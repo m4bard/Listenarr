@@ -1055,6 +1055,33 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
         }
 
         [Fact]
+        public async Task GetQueueAsync_MonitorPoll_FindsMonitoredHistoryEntryBeyondConfiguredLimit()
+        {
+            // A job that finished beyond the history limit must still resolve on a monitor poll.
+            // Bounded to the limit it reads as absent, the row stays Downloading and the item
+            // cannot be grabbed again.
+            using var apiMock = new NzbgetApiMock();
+            QueuePollingResponses(
+                apiMock,
+                [],
+                Enumerable.Range(1, 5)
+                    .Select(index => HistoryEntryValue(
+                        nzbId: index.ToString(),
+                        title: $"Book {index}",
+                        status: "FAILURE/UNPACK"))
+                    .ToArray());
+            using var http = new HttpClient(apiMock);
+            var adapter = CreateAdapter(
+                http,
+                NullLogger<NzbgetAdapter>.Instance,
+                configurationService: ConfigurationServiceWithHistoryLimit(3));
+
+            var queue = await adapter.GetQueueAsync(CreateClient(), ["5"], CancellationToken.None);
+
+            Assert.Equal("5", Assert.Single(queue).Id);
+        }
+
+        [Fact]
         public async Task GetQueueAsync_NonMonitorPoll_StillReturnsUnrequestedFailedHistory()
         {
             // AC: The queue UI reads the whole configured category, so an unmonitored failure stays visible.

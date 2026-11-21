@@ -79,7 +79,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
 
             try
             {
-                var history = await ReadHistoryWithMeasurementAsync(client, QueueSurface, cancellationToken, requireCompleteSnapshot: !isMonitorPoll);
+                var history = await ReadHistoryWithMeasurementAsync(client, QueueSurface, cancellationToken, requireCompleteSnapshot: !isMonitorPoll, unbounded: isMonitorPoll);
                 AppendHistory(
                     client,
                     QueueSurface,

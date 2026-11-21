@@ -88,8 +88,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
 
             if (unbounded)
             {
-                // Presence evidence for orphan cleanup must cover every entry: bounding it would
-                // read a tracked job that sits beyond the limit as gone.
+                // Presence evidence for orphan cleanup and monitor polls must cover every entry:
+                // bounding it would read a tracked job that sits beyond the limit as gone.
                 return entries;
             }
 
