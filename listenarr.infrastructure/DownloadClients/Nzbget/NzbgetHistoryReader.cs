@@ -70,7 +70,9 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
 
         public async Task<IReadOnlyList<NzbgetHistoryEntry>> ReadAsync(
             DownloadClientConfiguration client,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool requireCompleteSnapshot = false,
+            bool unbounded = false)
         {
             var result = await _xmlRpcClient.CallAsync(
                 new NzbgetXmlRpcRequest
@@ -82,7 +84,14 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
                 cancellationToken);
 
             cancellationToken.ThrowIfCancellationRequested();
-            var entries = ParseEntries(result, cancellationToken);
+            var entries = ParseEntries(result, cancellationToken, requireCompleteSnapshot);
+
+            if (unbounded)
+            {
+                // Presence evidence for orphan cleanup must cover every entry: bounding it would
+                // read a tracked job that sits beyond the limit as gone.
+                return entries;
+            }
 
             // Mirrors Sonarr/Readarr's own precedent exactly, including the ordering: the
             // "history" RPC has no count/age parameter to pass in the family either, so every
@@ -100,33 +109,117 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
 
         internal static IReadOnlyList<NzbgetHistoryEntry> ParseEntries(
             XElement result,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool requireCompleteSnapshot = false)
         {
-            var data = result.Element("array")?.Element("data")
-                ?? throw new InvalidOperationException(
-                    "Invalid NZBGet history response: expected array/data.");
             var entries = new List<NzbgetHistoryEntry>();
-
-            foreach (var value in data.Elements("value"))
+            foreach (var entry in ReadStructs(result, cancellationToken, requireCompleteSnapshot))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var structElement = value.Element("struct");
-                if (structElement != null)
-                {
-                    entries.Add(ParseEntry(structElement));
-                }
+                entries.Add(ParseEntry(entry, requireCompleteSnapshot));
             }
 
             return entries.AsReadOnly();
         }
 
-        private static NzbgetHistoryEntry ParseEntry(XElement structElement)
+        internal static IEnumerable<XElement> ReadStructs(XElement result, CancellationToken ct, bool requireCompleteSnapshot)
+        {
+            var array = result.Element("array");
+            var data = array?.Element("data") ?? throw new InvalidOperationException("Invalid NZBGet response: expected array/data.");
+            if (requireCompleteSnapshot)
+            {
+                RequireOnlyChildren(result, "array");
+                RequireOnlyChildren(array!, "data");
+                if (data.Elements().Any(element => element.Name != "value") || HasText(data))
+                {
+                    throw new InvalidOperationException("Incomplete NZBGet array.");
+                }
+            }
+            foreach (var value in data.Elements("value"))
+            {
+                ct.ThrowIfCancellationRequested();
+                var entry = value.Element("struct");
+                if (entry == null)
+                {
+                    if (requireCompleteSnapshot)
+                    {
+                        throw new InvalidOperationException("Missing NZBGet struct.");
+                    }
+
+                    continue;
+                }
+
+                if (requireCompleteSnapshot)
+                {
+                    RequireOnlyChildren(value, "struct");
+                    var names = new HashSet<string>(StringComparer.Ordinal);
+                    if (entry.Elements().Any(element => element.Name != "member") || HasText(entry))
+                    {
+                        throw new InvalidOperationException("Incomplete NZBGet struct.");
+                    }
+                    foreach (var member in entry.Elements("member"))
+                    {
+                        if (member.Elements().Count() != 2 || member.Elements("name").Count() != 1 ||
+                            member.Elements("value").Count() != 1 || HasText(member) ||
+                            string.IsNullOrWhiteSpace(member.Element("name")!.Value) || !names.Add(member.Element("name")!.Value))
+                        {
+                            throw new InvalidOperationException("Incomplete NZBGet member.");
+                        }
+                    }
+                }
+                yield return entry;
+            }
+        }
+
+        internal static string ReadIdentifier(XElement entry, string name, bool required = false)
+        {
+            var member = entry.Elements("member").FirstOrDefault(member => member.Element("name")?.Value == name);
+            if (member == null && !required) return string.Empty;
+            var value = member?.Element("value");
+            var scalar = value?.Elements().SingleOrDefault();
+            if (scalar == null || scalar.HasElements || HasText(value!) ||
+                scalar.Name.LocalName is not ("i4" or "int" or "i8" or "string"))
+            {
+                throw new InvalidOperationException("Unreadable NZBGet identity.");
+            }
+            var id = scalar.Value.Trim();
+            if ((required || name == "NZBID") && string.IsNullOrEmpty(ParseCanonicalNzbId(id)))
+            {
+                throw new InvalidOperationException("Invalid NZBGet NZBID.");
+            }
+            return id;
+        }
+
+        private static bool HasText(XElement element) => element.Nodes().OfType<XText>().Any(text => !string.IsNullOrWhiteSpace(text.Value));
+
+        private static void RequireOnlyChildren(XElement element, string name)
+        {
+            if (element.Elements().Count() != 1 || element.Element(name) == null || HasText(element))
+            {
+                throw new InvalidOperationException("Ambiguous NZBGet XML-RPC value.");
+            }
+        }
+
+        private static NzbgetHistoryEntry ParseEntry(XElement structElement, bool requireCompleteSnapshot)
         {
             var members = structElement.Elements("member").ToDictionary(
                 member => member.Element("name")?.Value ?? string.Empty,
                 member => member.Element("value"),
                 StringComparer.Ordinal);
             var rawStatus = ReadScalar(members, "Status").Trim();
+            if (requireCompleteSnapshot)
+            {
+                _ = ReadIdentifier(structElement, "NZBID", required: true);
+                if (!members.TryGetValue("Status", out var status) || status == null ||
+                    status.Elements().Count() != 1 || status.Element("string") == null ||
+                    status.Element("string")!.HasElements || HasText(status) ||
+                    !(rawStatus.StartsWith("SUCCESS/", StringComparison.OrdinalIgnoreCase) ||
+                      rawStatus.StartsWith("FAILURE/", StringComparison.OrdinalIgnoreCase) ||
+                      rawStatus.StartsWith("WARNING/", StringComparison.OrdinalIgnoreCase) ||
+                      rawStatus.StartsWith("DELETED/", StringComparison.OrdinalIgnoreCase)))
+                {
+                    throw new InvalidOperationException("Unreadable NZBGet history status.");
+                }
+            }
             var deleteStatus = ReadScalar(members, "DeleteStatus").Trim();
             var markStatus = ReadScalar(members, "MarkStatus").Trim();
             var (totalSizeBytes, totalSizeKnown) = ParseMegabytes(ReadScalar(members, "FileSizeMB"));

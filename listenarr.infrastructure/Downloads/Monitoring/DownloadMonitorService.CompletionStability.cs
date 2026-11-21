@@ -94,7 +94,7 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
         /// <remarks>
         /// The hold writes the row back with its pre-completion status, so the completion is
         /// remembered only in <see cref="_completionFirstSeen"/>. A download the client drops
-        /// before the window passes comes back unchanged and is never seen complete again, and
+        /// before the window passes is not in the poll's result and is never seen complete again, and
         /// orphan cleanup would then delete it as missing from the client. Without the window the
         /// import was enqueued on the first pass, so this does exactly that: it applies only to a
         /// download the client itself reported complete during this run, and if the files went
@@ -127,6 +127,41 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                 LogRedaction.SanitizeText(current.Id));
             current.SetStatus(DownloadStatus.Completed);
             return true;
+        }
+
+        /// <summary>
+        /// Finalizes the held downloads the client dropped from this poll.
+        /// </summary>
+        /// <remarks>
+        /// The gateway returns only the downloads the client listed, so a held download the client
+        /// dropped is not in the poll's result and has to be found among the downloads that were
+        /// polled. This runs before orphan cleanup: the released row is Completed in memory, which
+        /// takes it out of the cleanup candidates.
+        /// </remarks>
+        private async Task ReleaseHeldDownloadsGoneFromClientAsync(
+            IDownloadService downloadService,
+            DownloadClientConfiguration client,
+            List<Download> clientDownloads,
+            List<Download> previousDownloads,
+            ISet<string> reportedIds,
+            CancellationToken cancellationToken)
+        {
+            foreach (var download in clientDownloads.Where(d => !reportedIds.Contains(d.Id)).ToList())
+            {
+                var previousDownload = previousDownloads.FirstOrDefault(d => d.Id == download.Id);
+                if (previousDownload == null || !ReleaseIfGoneWhileHeld(download, previousDownload, reportedIds))
+                {
+                    continue;
+                }
+
+                if (!await downloadService.TryUpdateFromClientPollAsync(previousDownload, download, cancellationToken))
+                {
+                    clientDownloads.Remove(download);
+                    continue;
+                }
+
+                await TriggerCallbacks(client, download, previousDownload, cancellationToken);
+            }
         }
 
         /// <summary>

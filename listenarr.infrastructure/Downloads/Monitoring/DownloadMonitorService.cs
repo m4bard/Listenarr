@@ -78,7 +78,6 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
     {
         private static readonly TimeSpan OrphanCleanupInterval = TimeSpan.FromMinutes(10);
         private static readonly TimeSpan OrphanCleanupQueueTimeout = TimeSpan.FromSeconds(15);
-        private static readonly TimeSpan OrphanCleanupStaleSnapshotMaxAge = TimeSpan.FromMinutes(3);
 
         private int _pollingInterval = 30;
         private DateTime _lastFullBroadcast = DateTime.MinValue;
@@ -210,23 +209,26 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                     {
                         var downloadService = scope.ServiceProvider.GetRequiredService<IDownloadService>();
                         var previousDownload = previousDownloads.FirstOrDefault(d => d.Id == download.Id);
-
-                        if (previousDownload != null
-                            && !ReleaseIfGoneWhileHeld(download, previousDownload, reportedIds)
-                            && !HasSettledAsComplete(download, previousDownload, stabilityWindow))
+                        // Hold the transition, not the update. Progress and size still persist,
+                        // so the row stays current; only finalization waits. Reverting the
+                        // status rather than skipping the write also means the next cycle sees
+                        // the same transition again and can let it through once the window has
+                        // passed, without anything else needing to remember it is pending.
+                        var holdsTransition = previousDownload != null
+                            && !HasSettledAsComplete(download, previousDownload, stabilityWindow);
+                        if (holdsTransition)
                         {
-                            // Hold the transition, not the update. Progress and size still persist,
-                            // so the row stays current; only finalization waits. Reverting the
-                            // status rather than skipping the write also means the next cycle sees
-                            // the same transition again and can let it through once the window has
-                            // passed, without anything else needing to remember it is pending.
-                            download.SetStatus(previousDownload.Status);
-                            await downloadService.UpdateAsync(download);
+                            download.SetStatus(previousDownload!.Status);
+                        }
+
+                        if (previousDownload == null ||
+                            !await downloadService.TryUpdateFromClientPollAsync(previousDownload, download, cancellationToken))
+                        {
+                            clientDownloads.Remove(download);
                             continue;
                         }
 
-                        await downloadService.UpdateAsync(download);
-                        if (previousDownload == null)
+                        if (holdsTransition)
                         {
                             continue;
                         }
@@ -234,13 +236,23 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                         await TriggerCallbacks(client, download, previousDownload, cancellationToken);
                     }
 
+                    await ReleaseHeldDownloadsGoneFromClientAsync(
+                        scope.ServiceProvider.GetRequiredService<IDownloadService>(),
+                        client,
+                        clientDownloads,
+                        previousDownloads,
+                        reportedIds,
+                        cancellationToken);
+
                     if (ShouldRunOrphanCleanup(client))
                     {
                         await CleanupOrphanedDownloadsAsync(
                             client,
                             clientDownloads,
                             clientQueuePoller,
-                            orphanCleanupService);
+                            downloadClientGateway,
+                            orphanCleanupService,
+                            cancellationToken);
                         ScheduleNextOrphanCleanup(client);
                     }
                 }
@@ -277,26 +289,57 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
             DownloadClientConfiguration client,
             List<Download> clientDownloads,
             DownloadClientQueuePoller clientQueuePoller,
-            DownloadOrphanCleanupService orphanCleanupService)
+            IDownloadClientGateway downloadClientGateway,
+            DownloadOrphanCleanupService orphanCleanupService,
+            CancellationToken cancellationToken)
         {
             try
             {
+                var candidates = orphanCleanupService.GetEligibleDownloads(clientDownloads);
+                if (candidates.Count == 0) return;
+
                 // Durable orphan removal belongs to the monitor worker, not the
                 // queue display path. Use the same full-snapshot poller safeguards
-                // as queue display so cached, unavailable, or suspiciously empty
-                // snapshots never drive destructive cleanup.
+                // as queue display so a failed or incomplete client response is
+                // reported unavailable and never drives destructive cleanup.
                 var queueResults = await clientQueuePoller.FetchAsync(
                     [client],
                     OrphanCleanupQueueTimeout,
-                    OrphanCleanupStaleSnapshotMaxAge,
                     maxParallelClientPolls: 1);
                 var clientQueueResult = queueResults.Single();
+                var liveItems = clientQueueResult.QueueItems;
 
+                if (!clientQueueResult.IsUnavailable && !clientQueueResult.IsIncomplete)
+                {
+                    // The full snapshot is scoped to the client's category. A tracked job
+                    // whose category changed is missing from it but still in the client,
+                    // so look tracked jobs up by ID too. If that lookup fails, skip cleanup.
+                    List<QueueItem> trackedItems;
+                    try
+                    {
+                        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                        timeoutCts.CancelAfter(OrphanCleanupQueueTimeout);
+                        trackedItems = await downloadClientGateway.GetTrackedQueueItemsAsync(client, candidates, timeoutCts.Token);
+                        timeoutCts.Token.ThrowIfCancellationRequested();
+                    }
+                    catch (Exception ex) when (!cancellationToken.IsCancellationRequested && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        logger.LogWarning(
+                            "Skipping orphan cleanup for client {ClientName}: tracked download lookup failed ({FailureType})",
+                            LogRedaction.SanitizeText(client.Name ?? client.Id), ex.GetType().Name);
+                        return;
+                    }
+
+                    liveItems = [.. liveItems, .. trackedItems];
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
                 await orphanCleanupService.RemoveOrphansAsync(
                     client,
                     clientQueueResult,
-                    clientQueueResult.QueueItems,
-                    clientDownloads);
+                    liveItems,
+                    candidates,
+                    cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {

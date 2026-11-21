@@ -71,12 +71,12 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
         /// reported for a stall.
         /// </summary>
         /// <remarks>
-        /// The gateway hands back every download it was given, whether or not the client listed
-        /// it, and one it did not list keeps last poll's bytes, which is indistinguishable from a
-        /// stall. QueueItemConverter writes ClientState on every item it maps, so the key is taken
-        /// off before the poll: present afterwards means reported this poll. Anything not reported
-        /// gets its old value back and is left out of the judgement entirely, which leaves a torrent
-        /// that has vanished from the client to orphan cleanup.
+        /// The gateway returns only the downloads the client listed, and a download it did not
+        /// list keeps last poll's bytes, which is indistinguishable from a stall. QueueItemConverter
+        /// writes ClientState on every item it maps, so the key is taken off before the poll:
+        /// present afterwards means reported this poll. Anything not reported gets its old value
+        /// back and is left out of the judgement entirely, which leaves a torrent that has
+        /// vanished from the client to orphan cleanup.
         /// </remarks>
         private async Task<List<Download>> FetchDownloadsAndJudgeStallsAsync(
             IDownloadClientGateway downloadClientGateway,
