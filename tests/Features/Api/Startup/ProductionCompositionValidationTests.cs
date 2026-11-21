@@ -72,6 +72,11 @@ public sealed class ProductionCompositionValidationTests : BaseTests
 
             Type[] affectedScopedServiceTypes =
             [
+                typeof(IAuthorMonitoringService),
+                typeof(ISeriesMonitoringService),
+                typeof(ILibraryAddService),
+                typeof(IQualityProfileService),
+                typeof(IQualityProfileRepository),
                 typeof(IAudiobookDeletionCommitService),
                 typeof(IAudiobookDeletionIntentStore),
                 typeof(IAudiobookDeletionIntentReconciler),
@@ -102,6 +107,8 @@ public sealed class ProductionCompositionValidationTests : BaseTests
                 typeof(MoveBackgroundService),
                 typeof(MetadataRescanService),
                 typeof(MetadataRefreshBackgroundService),
+                typeof(AuthorMonitoringBackgroundService),
+                typeof(SeriesMonitoringBackgroundService),
                 typeof(DownloadProcessingJobProcessor),
                 typeof(UnmatchedScanBackgroundService),
                 typeof(StartupDbNormalizer)

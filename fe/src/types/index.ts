@@ -775,6 +775,7 @@ export interface MonitoredAuthor {
   authorAsin?: string
   region: string
   language: string
+  qualityProfileId?: number | null
   createdAt: string
   updatedAt: string
   lastCheckedAt?: string
@@ -802,6 +803,7 @@ export interface MonitoredSeries {
   seriesAsin?: string
   region: string
   language: string
+  qualityProfileId?: number | null
   createdAt: string
   updatedAt: string
   lastCheckedAt?: string
