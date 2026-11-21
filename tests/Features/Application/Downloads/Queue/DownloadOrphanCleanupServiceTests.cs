@@ -432,6 +432,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             var persisted = await _downloadRepository.GetByIdAsync(original.Id);
             Assert.Equal(importStarted ? DownloadStatus.ImportPending : DownloadStatus.Downloading, persisted?.Status);
             Assert.Equal(importStarted ? "missing-client-item" : "recovered-client-item", persisted?.GetExternalId());
+            Assert.Empty(await GetHistoryForDownloadAsync(original.Id));
             _metricsMock.Verify(m => m.Increment(It.IsAny<string>(), It.IsAny<double>()), Times.Never);
         }
 

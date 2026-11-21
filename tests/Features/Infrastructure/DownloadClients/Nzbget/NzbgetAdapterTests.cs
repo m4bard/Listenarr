@@ -507,6 +507,29 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Nzbget
             Assert.Equal("3", result[2].CanonicalNzbId);
         }
 
+        // The tracked-presence lookup that orphan cleanup relies on must see every history entry.
+        // Bounding it would read a tracked job beyond the limit as gone and delete its row.
+        [Fact]
+        public async Task HistoryReader_UnboundedRead_ReturnsEntriesBeyondConfiguredLimit()
+        {
+            using var apiMock = new NzbgetApiMock();
+            var entries = Enumerable.Range(0, 5)
+                .Select(index => HistoryEntryValue(
+                    nzbId: (index + 1).ToString(),
+                    title: $"Book {index + 1}",
+                    status: "SUCCESS/UNPACK"))
+                .ToArray();
+            apiMock.QueueXmlRpcResponse(
+                "history",
+                NzbgetApiMock.CreateHistoryResponse(string.Concat(entries)));
+            using var http = new HttpClient(apiMock);
+            var reader = CreateHistoryReader(http, ConfigurationServiceWithHistoryLimit(3));
+
+            var result = await reader.ReadAsync(CreateClient(), CancellationToken.None, unbounded: true);
+
+            Assert.Equal(5, result.Count);
+        }
+
         // Control: a response smaller than the configured limit must come back whole. Guards
         // against an off-by-one or an inverted comparison in the Take(limit) call above.
         [Fact]
