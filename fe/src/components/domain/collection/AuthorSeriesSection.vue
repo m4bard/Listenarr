@@ -153,6 +153,8 @@ interface Props {
   books: readonly AuthorSeriesBook[]
   region: string
   language: string
+  // The profile chosen in the page's monitoring selector; null when none valid is selected.
+  qualityProfileId: number | null
 }
 
 interface Emits {
@@ -303,11 +305,20 @@ async function toggleMonitoring(key: string) {
       return
     }
 
+    if (props.qualityProfileId === null) {
+      toast.error(
+        'Quality profile required',
+        'Select a quality profile, or create one in Settings → Quality Profiles.',
+      )
+      return
+    }
+
     const response = await apiService.monitorSeries({
       name: group.name,
       asin: group.asin,
       region: props.region,
       language: props.language,
+      qualityProfileId: props.qualityProfileId,
     })
 
     monitoredByKey.value = { ...monitoredByKey.value, [key]: response.monitoredSeries }

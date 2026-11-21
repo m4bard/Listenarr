@@ -21,8 +21,8 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import AuthorSeriesSection from '@/components/domain/collection/AuthorSeriesSection.vue'
 import type { AuthorSeriesBook } from '@/components/domain/collection/authorSeriesGrouping'
 
-const { mockGetSeriesMonitoringStatus, mockMonitorSeries, mockUnmonitorSeries } = vi.hoisted(
-  () => ({
+const { mockGetSeriesMonitoringStatus, mockMonitorSeries, mockUnmonitorSeries, mockToastError } =
+  vi.hoisted(() => ({
     mockGetSeriesMonitoringStatus: vi.fn(async () => ({
       isMonitored: false,
       monitoredSeries: null,
@@ -42,8 +42,8 @@ const { mockGetSeriesMonitoringStatus, mockMonitorSeries, mockUnmonitorSeries } 
       failedCount: 0,
     })),
     mockUnmonitorSeries: vi.fn(async () => ({ message: 'Series monitoring disabled' })),
-  }),
-)
+    mockToastError: vi.fn(),
+  }))
 
 vi.mock('@/services/api', () => ({
   apiService: {
@@ -58,7 +58,7 @@ vi.mock('@/services/toastService', () => ({
   useToast: () => ({
     success: vi.fn(),
     warning: vi.fn(),
-    error: vi.fn(),
+    error: mockToastError,
     info: vi.fn(),
   }),
 }))
@@ -102,7 +102,10 @@ const books: AuthorSeriesBook[] = [
   },
 ]
 
-function mountSection(sectionBooks: AuthorSeriesBook[] = books) {
+function mountSection(
+  sectionBooks: AuthorSeriesBook[] = books,
+  qualityProfileId: number | null = 3,
+) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -116,7 +119,7 @@ function mountSection(sectionBooks: AuthorSeriesBook[] = books) {
   })
 
   return mount(AuthorSeriesSection, {
-    props: { books: sectionBooks, region: 'us', language: 'english' },
+    props: { books: sectionBooks, region: 'us', language: 'english', qualityProfileId },
     global: { plugins: [router] },
   })
 }
@@ -133,6 +136,7 @@ describe('AuthorSeriesSection', () => {
     mockGetSeriesMonitoringStatus.mockResolvedValue({ isMonitored: false, monitoredSeries: null })
     mockMonitorSeries.mockReset()
     mockUnmonitorSeries.mockReset()
+    mockToastError.mockReset()
   })
 
   it('renders one collapsed row per distinct series with the header count', async () => {
@@ -298,9 +302,26 @@ describe('AuthorSeriesSection', () => {
       asin: 'B0SERIES01',
       region: 'us',
       language: 'english',
+      qualityProfileId: 3,
     })
     expect(wrapper.emitted('monitoring-changed')).toHaveLength(1)
     expect(wrapper.findAll('.author-series-monitor-btn')[1]!.text()).toContain('Monitoring')
+  })
+
+  it('asks for a quality profile instead of monitoring when the page has none selected', async () => {
+    const wrapper = mountSection(books, null)
+    await flushPromises()
+
+    await wrapper.findAll('.author-series-monitor-btn')[1]!.trigger('click')
+    await flushPromises()
+
+    expect(mockMonitorSeries).not.toHaveBeenCalled()
+    expect(mockToastError).toHaveBeenCalledWith(
+      'Quality profile required',
+      'Select a quality profile, or create one in Settings → Quality Profiles.',
+    )
+    expect(wrapper.emitted('monitoring-changed')).toBeUndefined()
+    expect(wrapper.findAll('.author-series-monitor-btn')[1]!.text()).toBe('Monitor')
   })
 
   it('unmonitors a series and reports the change to the page', async () => {

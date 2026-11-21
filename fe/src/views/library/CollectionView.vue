@@ -205,6 +205,7 @@
       :books="audiobooks"
       :region="authorCatalogRegion"
       :language="preferredAuthorMonitoringLanguage"
+      :quality-profile-id="hasValidMonitoringQualityProfile ? monitoringQualityProfileId : null"
       @monitoring-changed="refreshLibrary"
     />
 
