@@ -129,8 +129,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Nzbget
             DownloadClientConfiguration client,
             string surface,
             CancellationToken cancellationToken,
-            bool requireCompleteSnapshot = false,
-            bool unbounded = false)
+            bool requireCompleteSnapshot = false, bool unbounded = false)
         {
             var startTimestamp = timeProvider.GetTimestamp();
             var historyCount = 0;

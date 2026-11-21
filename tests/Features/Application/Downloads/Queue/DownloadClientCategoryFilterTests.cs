@@ -110,14 +110,11 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
               }
             }
             """;
-            using var response = new HttpResponseMessage(HttpStatusCode.OK)
+            // A fresh response per request: the adapter also asks for the session settings.
+            var handler = new DelegatingHandlerMock((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json")
-            };
-            var handler = new DelegatingHandlerMock((_, _) =>
-            {
-                return Task.FromResult(response);
-            });
+            }));
 
             using var httpClient = new HttpClient(handler);
             var httpFactory = new Mock<IHttpClientFactory>();
@@ -159,16 +156,11 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
               }
             }
             """;
-            using var monitoredResponse = new HttpResponseMessage(HttpStatusCode.OK)
+            // A fresh response per request: the adapter also asks for the session settings.
+            var handler = new DelegatingHandlerMock((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json")
-            };
-            using var trackedResponse = new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(body, Encoding.UTF8, "application/json")
-            };
-            var responses = new Queue<HttpResponseMessage>([monitoredResponse, trackedResponse]);
-            var handler = new DelegatingHandlerMock((_, _) => Task.FromResult(responses.Dequeue()));
+            }));
             using var httpClient = new HttpClient(handler);
             var httpFactory = new Mock<IHttpClientFactory>();
             httpFactory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
