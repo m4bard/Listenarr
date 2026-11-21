@@ -53,7 +53,8 @@ vi.mock('@/services/api', () => ({
     getBootstrapConfig: vi.fn(async () => ({})),
     getStartupConfig: vi.fn(async () => ({})),
     getApplicationSettings: vi.fn(async () => ({})),
-    getQualityProfiles: vi.fn(async () => []),
+    // Monitoring requires a selected quality profile; the page preselects the default.
+    getQualityProfiles: vi.fn(async () => [{ id: 3, name: 'Standard', isDefault: true }]),
     getLibrary: vi.fn(async () => []),
     getAuthorCatalog: vi.fn(async () => null),
     getAuthorLookup: vi.fn(async () => null),
