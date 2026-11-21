@@ -4,8 +4,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
     base:        faf995e8ce80ba43153314e0f544b7246e9a8306
     base short:  faf995e8c
-    patches:     754
-    version:     1.10.5+m4bard.754
+    patches:     758
+    version:     1.10.5+m4bard.758
 
 ## Patches, oldest first
 
@@ -763,6 +763,10 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     790689930  #-    tests: history written after guarded orphan delete; NZBGet unbounded presence read
     9b49c83a2  #-    stack: manifest for faf995e8c plus 752 patches
     27fc348dd  #-    stack: keep two files under the 500-line cap and give the Transmission category tests a response per request
+    8eadec41c  #-    stack: manifest for faf995e8c plus 754 patches
+    ebfdd71d0  #-    fix(downloads): a failed History write no longer aborts the rest of orphan cleanup
+    853c49753  #-    fix(downloads): keep the completion hold when the release write is rejected
+    bcc732b01  #-    fix(nzbget): a monitor poll reads the whole history, not just the configured limit
 
 ## How this stack was built
 
