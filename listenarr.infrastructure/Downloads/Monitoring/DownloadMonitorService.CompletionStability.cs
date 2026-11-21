@@ -104,8 +104,9 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
         /// its hold must not write Completed over a row that has moved into import, because the
         /// Completed edge would enqueue that import a second time.
         /// </remarks>
-        private bool ReleaseIfGoneWhileHeld(Download current, Download previous, ISet<string> reportedIds)
+        private bool ReleaseIfGoneWhileHeld(Download current, Download previous, ISet<string> reportedIds, out DateTime firstSeen)
         {
+            firstSeen = default;
             if (reportedIds.Contains(current.Id))
             {
                 return false;
@@ -117,7 +118,7 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                 return false;
             }
 
-            if (!_completionFirstSeen.TryRemove(current.Id, out _))
+            if (!_completionFirstSeen.TryRemove(current.Id, out firstSeen))
             {
                 return false;
             }
@@ -149,13 +150,16 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
             foreach (var download in clientDownloads.Where(d => !reportedIds.Contains(d.Id)).ToList())
             {
                 var previousDownload = previousDownloads.FirstOrDefault(d => d.Id == download.Id);
-                if (previousDownload == null || !ReleaseIfGoneWhileHeld(download, previousDownload, reportedIds))
+                if (previousDownload == null || !ReleaseIfGoneWhileHeld(download, previousDownload, reportedIds, out var firstSeen))
                 {
                     continue;
                 }
 
                 if (!await downloadService.TryUpdateFromClientPollAsync(previousDownload, download, cancellationToken))
                 {
+                    // The write was rejected, so the release did not happen. Put the hold back,
+                    // or the next cycle reads the row as an ordinary missing download.
+                    _completionFirstSeen[download.Id] = firstSeen;
                     clientDownloads.Remove(download);
                     continue;
                 }

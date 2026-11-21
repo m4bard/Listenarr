@@ -214,6 +214,40 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             Assert.Empty(await _downloadProcessingJobRepository.GetByDownloadIdAsync(download.Id));
         }
 
+        [Fact]
+        [Trait("Scenario", "A release the guarded write rejects is retried on the next cycle")]
+        public async Task GoneFromClient_RetriesTheRelease_WhenTheGuardedWriteIsRejected()
+        {
+            // The release takes the hold entry before it writes. If the write is rejected because
+            // the row changed since the poll, the entry has to survive, or the next cycle sees an
+            // ordinary missing download and orphan cleanup deletes the row.
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithCompletionStabilitySeconds(60)
+                .Build());
+
+            var download = await DriveToCompletionAsync();
+            var processor = (DownloadMonitorProcessor)_provider.GetRequiredService<IDownloadMonitorProcessor>();
+            ClientAdapter().QueueItemsMock = [];
+            ClientAdapter().BeforeFilteredQueueResponse = async () =>
+            {
+                var changed = await _downloadRepository.GetByIdAsync(download.Id);
+                changed!.DownloadPath = "changed-since-the-poll";
+                await _downloadRepository.UpdateAsync(changed);
+                ClientAdapter().BeforeFilteredQueueResponse = null;
+            };
+
+            _monitor.ScheduleNextClientPoll(_client, -100);
+            await _monitor.MonitorDownloadsAsync(CancellationToken.None);
+
+            Assert.NotEqual(DownloadStatus.Completed, (await _downloadRepository.GetByIdAsync(download.Id))!.Status);
+            Assert.True(processor._completionFirstSeen.ContainsKey(download.Id));
+
+            _monitor.ScheduleNextClientPoll(_client, -100);
+            await _monitor.MonitorDownloadsAsync(CancellationToken.None);
+
+            Assert.Equal(DownloadStatus.Completed, (await _downloadRepository.GetByIdAsync(download.Id))!.Status);
+        }
+
         private DownloadCLientAdapterMock ClientAdapter() =>
             _provider.GetServices<IDownloadClientAdapter>()
                 .OfType<DownloadCLientAdapterMock>()
