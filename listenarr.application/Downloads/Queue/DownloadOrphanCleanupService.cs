@@ -134,12 +134,25 @@ namespace Listenarr.Application.Downloads.Queue
                 // row, so a row the guard kept never gets a Removed entry. The values come from
                 // the in-memory snapshot, so recording after the delete loses nothing. This is a
                 // deliberate divergence from a silent drop: see the commit message for the rationale.
-                await downloadHistoryService.RecordRemovedAsync(
-                    download.Id,
-                    download.DownloadClientId,
-                    download.Title ?? "Unknown",
-                    download.AudiobookId,
-                    reason: removalReason);
+                // A failed History write must not strand the orphans after this one: the row is
+                // already gone, so the next cleanup has nothing left to retry for it.
+                try
+                {
+                    await downloadHistoryService.RecordRemovedAsync(
+                        download.Id,
+                        download.DownloadClientId,
+                        download.Title ?? "Unknown",
+                        download.AudiobookId,
+                        reason: removalReason);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogWarning(
+                        ex,
+                        "Removed orphaned download {DownloadId} for client {ClientName} but could not record the removal in History",
+                        download.Id,
+                        client.Name);
+                }
             }
 
             if (missingFromSnapshotCount > 0)
