@@ -2,10 +2,10 @@
 
 This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
-    base:        faf995e8ce80ba43153314e0f544b7246e9a8306
-    base short:  faf995e8c
-    patches:     758
-    version:     1.10.5+m4bard.758
+    base:        dc14be034ad80e6a04e4318470f327e246c26971
+    base short:  dc14be034
+    patches:     766
+    version:     1.10.6+m4bard.766
 
 ## Patches, oldest first
 
@@ -767,6 +767,14 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     ebfdd71d0  #-    fix(downloads): a failed History write no longer aborts the rest of orphan cleanup
     853c49753  #-    fix(downloads): keep the completion hold when the release write is rejected
     bcc732b01  #-    fix(nzbget): a monitor poll reads the whole history, not just the configured limit
+    cd7644d10  #-    stack: manifest for faf995e8c plus 758 patches
+    3e2df3a26  #-    Merge upstream v1.10.6-canary (dc14be034) into the stack
+    4ee39e318  #-    test(monitoring): stack tests pass a quality profile service after #1205
+    ede49b5f2  #-    stack: rebase the AddMonitoringQualityProfile Designer on the stack model
+    c31013dc3  #-    test(library): stack add and monitoring tests seed a quality profile
+    849c13906  #-    fix(collection): the author page's series section monitors with the selected profile
+    4ba9b3226  #-    test(collection): the series-identity page spec offers a default quality profile
+    78f741d08  #-    test(quality-profiles): create the #1205 fixture profiles with upgrades off
 
 ## How this stack was built
 
@@ -904,6 +912,19 @@ the poll returning every download, so it now runs over the polled downloads in i
 stack's History "Removed" entry is now written after the guarded delete, and the NZBGet history limit does not apply to
 the tracked-presence lookup. The commit after the merge adds the two tests that pin those last two points.
 
+The 1.10.5 stack ends at its manifest commit, "stack: manifest for faf995e8c plus 758 patches", which is the row before
+the 1.10.6 merge. Upstream canary 1.10.6 (dc14be034) is then merged in ("Merge upstream v1.10.6-canary (dc14be034) into
+the stack"), so the 1.10.5 stack is an ancestor of this one. 1.10.6 is upstream's #1205 (a library add or a monitor needs
+a valid quality profile: the requested one, or else the default, and the add or the monitor is refused when neither
+exists; monitored authors and series store their profile and add new books with it, can be moved to another profile, and
+a profile they use cannot be deleted) plus the version bump. It adds the migration 20261121052354_AddMonitoringQualityProfile
+(a nullable QualityProfileId and its index on MonitoredAuthors and MonitoredSeries, no backfill). The merge had five
+textual conflicts, each resolved by keeping both sides. The migration's Designer is rewritten as the stack's cumulative
+model at that position, as for 20261119022628; its Up and Down are upstream's. The stack's own tests that add or monitor
+now seed a default profile, #1205's fixtures that create a profile through the API send upgradeAllowed false (the
+stack's cutoff rule refuses a profile that allows upgrades without a cutoff), and the stack's series section on the
+author page sends the profile selected on that page instead of relying on the default.
+
 ## Known differences from the 1.7.4 stack
 
 - A fresh install stores MaxConcurrentIndexerSearches=0. Rolled back to the 1.7.4 stack, such an install searches
@@ -920,5 +941,7 @@ the tracked-presence lookup. The commit after the merge adds the two tests that 
 Migrations: the newest fork migration is 20261114075422 (the request state table). #1023 stays at 20261112054132,
 the fork-local #914 at 20261112054145, and #1151 at 20261114004926. Upstream added no migration between
 20261029020400 and 1.9.2 (1.8.5, 1.8.6, 1.9.0, 1.9.1 and 1.9.2 add none); 1.10.0 adds 20261119022628_AddAudiobookAddedDate,
-which sorts after every fork migration, so a database on the 1.9.2 stack applies it as the one pending migration. The history repoint for a database that ran an earlier stack is recomputed
+which sorts after every fork migration, so a database on the 1.9.2 stack applies it as the one pending migration. 1.10.6 adds
+20261121052354_AddMonitoringQualityProfile, which also sorts after every fork migration, so a database on the 1.10.5 stack
+applies it as the one pending migration. The history repoint for a database that ran an earlier stack is recomputed
 with this build's upgrade packet.
