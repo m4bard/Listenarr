@@ -118,6 +118,7 @@ public sealed class VerifiedFileRenameTransactionCoordinatorTests : BaseTests
     [InlineData(22, false, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.OtherRead)]
     [InlineData(22, true, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.OtherRead)]
     [InlineData(null, false, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead)]
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     public async Task PrepareAsync_PublishedTarget_PreservesSourceUnixMode(
         int? nativeError, bool forceCopy, UnixFileMode sourceMode)
     {
