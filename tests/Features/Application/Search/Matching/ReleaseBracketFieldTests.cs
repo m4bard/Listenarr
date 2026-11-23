@@ -86,7 +86,11 @@ public sealed class ReleaseBracketFieldTests : BaseTests
             NullLogger<AutomaticSearchScoringService>.Instance, TestAnnotationCatalog.CreateProvider());
         var candidate = new SearchResult
         {
-            Id = "bracket-field", Title = release, Format = "M4B", Quality = "M4B", Size = 100 * 1024 * 1024,
+            Id = "bracket-field",
+            Title = release,
+            Format = "M4B",
+            Quality = "M4B",
+            Size = 100 * 1024 * 1024,
             IdentityEvidence = new() { ReleaseName = release }
         };
         var assessment = await scorer.ScoreAsync(Book(), [candidate], new QualityProfile { PreferredLanguages = ["English"] });
