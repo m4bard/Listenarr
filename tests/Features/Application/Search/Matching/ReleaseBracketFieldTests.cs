@@ -36,6 +36,8 @@ public sealed class ReleaseBracketFieldTests : BaseTests
     [InlineData("Dracula by Bram Stoker [ENG / M4B / Mary Shelley]")]
     [InlineData("Dracula by Bram Stoker ENG / M4B")]
     [InlineData("Dracula by Bram Stoker ENG")]
+    [InlineData("Dracula by Bram Stoker [M4B] ENG [MP3]")]
+    [InlineData("Dracula by Bram Stoker (ENG]")]
     [InlineData("Dracula by English [M4B]")]
     [InlineData("Dracula by Mary Shelley [ENG / M4B]")]
     [InlineData("Frankenstein by Mary Shelley [ENG / M4B]")]
