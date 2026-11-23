@@ -47,6 +47,15 @@ public sealed class ReleaseBracketFieldTests : BaseTests
     }
 
     [Theory]
+    [InlineData("Dracula / Bram Stoker [M4B]", true)]
+    [InlineData("Dracula / Mary Shelley [M4B]", false)]
+    [InlineData("Dracula / Bram Stoker / Mary Shelley [M4B]", false)]
+    public void ASlashSeparatedCreditIsAcceptedOnlyForTheKnownAuthor(string release, bool expected)
+    {
+        Assert.Equal(expected, Evaluate(Book(), release).IsConfirmed);
+    }
+
+    [Theory]
     [InlineData("Fire / Ice by Bram Stoker [ENG / M4B]", true)]
     [InlineData("Fire / Ice by Bram Stoker [M4B]", true)]
     [InlineData("Fire by Bram Stoker [ENG / M4B]", false)]
