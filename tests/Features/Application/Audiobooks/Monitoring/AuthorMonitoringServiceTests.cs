@@ -265,6 +265,19 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
             Assert.Equal("1", metadata.SeriesNumber);
         }
 
+        [Fact]
+        public async Task MonitorAuthorAsync_PassesTheRegionOfTheMonitorToTheAddedBook()
+        {
+            var metadata = await CaptureAddedBookMetadataAsync(new AudibleSearchResultBuilder()
+                .WithAsin("B004YWTD30")
+                .WithTitle("She: A History of Adventure")
+                .WithAuthor("H. Rider Haggard")
+                .WithLanguage("english")
+                .Build());
+
+            Assert.Equal("us", metadata.Region);
+        }
+
         private static async Task<AudibleBookMetadata> CaptureAddedBookMetadataAsync(AudibleSearchResult catalogBook)
         {
             var dbOptions = new DbContextOptionsBuilder<ListenArrDbContext>()
