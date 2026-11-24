@@ -275,7 +275,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
                 .WithLanguage("english")
                 .Build());
 
-            Assert.Equal("us", metadata.Region);
+            Assert.Equal("uk", metadata.Region);
         }
 
         private static async Task<AudibleBookMetadata> CaptureAddedBookMetadataAsync(AudibleSearchResult catalogBook)
@@ -290,7 +290,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
 
             var authorCatalogService = new Mock<IAuthorCatalogService>();
             authorCatalogService
-                .Setup(service => service.GetCatalogAsync("H. Rider Haggard", "us", 500, null, false, It.IsAny<System.Threading.CancellationToken>()))
+                .Setup(service => service.GetCatalogAsync("H. Rider Haggard", "uk", 500, null, false, It.IsAny<System.Threading.CancellationToken>()))
                 .ReturnsAsync(new AuthorCatalogFetchResult
                 {
                     Author = new AuthorLookupItem
@@ -334,7 +334,7 @@ namespace Listenarr.Tests.Features.Application.Audiobooks.Monitoring
             var result = await service.MonitorAuthorAsync(new MonitorAuthorRequest
             {
                 Name = "H. Rider Haggard",
-                Region = "us",
+                Region = "uk",
                 Language = "english"
             });
 
