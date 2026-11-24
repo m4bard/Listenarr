@@ -395,8 +395,10 @@ namespace Listenarr.Infrastructure.Downloads.Processing
                     }
                 }
 
-                await RecordImportResultsAsync(historyRepository, job, download, audiobook,
-                    correlationId, results, cancellationToken);
+                foreach (var result in results)
+                {
+                    await RecordFileResultHistoryAsync(historyRepository, download, audiobook, job.Id, result, correlationId, cancellationToken);
+                }
 
                 job.JobData[Download.SourceRetainedMetadataKey] = results.Any(result =>
                     !string.IsNullOrWhiteSpace(result.SourcePath)

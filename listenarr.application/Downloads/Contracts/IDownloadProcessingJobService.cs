@@ -37,8 +37,15 @@ namespace Listenarr.Application.Downloads.Contracts
         /// client reporting completion, and so requires the download to be Completed. A retry is
         /// asked for later, when the download has already moved on to ImportPending, and it reuses
         /// the existing job so the record of the earlier failures is not thrown away.
+        ///
+        /// Saves the download as given in the same transaction as the job, so the caller applies
+        /// its change (the unblock) to the download and does not save it separately. The job is
+        /// only ever visible to the worker alongside a download that is eligible to run it.
         /// </summary>
-        /// <exception cref="InvalidOperationException">When the download is not awaiting importation</exception>
+        /// <exception cref="InvalidOperationException">
+        /// When the download is not awaiting importation, or when another retry changed it or its
+        /// jobs after they were read and left no job queued. Nothing is saved.
+        /// </exception>
         Task<string> RequeueAsync(Download download);
 
         /// <summary>

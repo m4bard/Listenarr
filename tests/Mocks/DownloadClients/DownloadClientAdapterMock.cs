@@ -23,7 +23,9 @@ namespace Listenarr.Tests.Mocks.DownloadClients
         public int FullSnapshotQueueRequestCount { get; private set; }
         public int FilteredQueueRequestCount { get; private set; }
         public Exception? FilteredQueueException { get; set; }
-        public Func<Task>? BeforeFilteredQueueResponse { get; set; }
+        // Runs while a filtered (monitor) poll is in flight, so a test can change a row between
+        // the monitor loading it and writing it back.
+        public Func<Task>? DuringFilteredQueueRequest { get; set; }
         public int TrackedQueueRequestCount { get; private set; }
         public List<string>? LastTrackedQueueIds { get; private set; }
         public List<QueueItem>? TrackedQueueItemsMock { get; set; }
@@ -80,9 +82,9 @@ namespace Listenarr.Tests.Mocks.DownloadClients
                 throw FilteredQueueException;
             }
 
-            if (BeforeFilteredQueueResponse != null)
+            if (DuringFilteredQueueRequest != null)
             {
-                await BeforeFilteredQueueResponse();
+                await DuringFilteredQueueRequest();
             }
 
             var idSet = ids.ToHashSet(StringComparer.OrdinalIgnoreCase);

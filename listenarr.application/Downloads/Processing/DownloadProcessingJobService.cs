@@ -90,6 +90,11 @@ namespace Listenarr.Application.Downloads.Processing
             var existingActive = await jobRepository.GetActiveByDownloadIdAsync(download.Id);
             if (existingActive != null)
             {
+                if (!await jobRepository.TrySaveWithDownloadAsync(download, job: null, existingActive.Id))
+                {
+                    return await SupersededRequeueAsync(download);
+                }
+
                 logger.LogInformation("Download {DownloadId} already has active job {JobId}; no requeue needed", download.Id, existingActive.Id);
                 return existingActive.Id;
             }
@@ -102,25 +107,37 @@ namespace Listenarr.Application.Downloads.Processing
             var previous = (await jobRepository.GetByDownloadIdAsync(download.Id)).LastOrDefault();
             if (previous != null)
             {
-                await jobRepository.UpdateAsync(previous.Requeue("Requeued by request after the import was blocked"));
+                if (!await jobRepository.TrySaveWithDownloadAsync(
+                        download,
+                        previous.Requeue("Requeued by request after the import was blocked"),
+                        expectedActiveJobId: null))
+                {
+                    return await SupersededRequeueAsync(download);
+                }
+
                 logger.LogInformation("Requeued download {DownloadId} for post-processing: {JobId}", download.Id, previous.Id);
                 return previous.Id;
             }
 
             // No job survives. Job retention deletes terminal jobs after a week, so a download
             // blocked longer than that has nothing left to reuse and needs a fresh one.
-            DownloadProcessingJob job;
+            var job = NewJobFor(download);
             try
             {
-                job = await jobRepository.AddAsync(NewJobFor(download));
+                if (!await jobRepository.TrySaveWithDownloadAsync(download, job, expectedActiveJobId: null))
+                {
+                    return await SupersededRequeueAsync(download);
+                }
             }
             catch (UniqueConstraintViolationException)
             {
                 // Two retry requests for the same download raced here, both found nothing to
                 // reuse, and both tried to insert. The filtered unique index on
-                // ActiveDeduplicationKey lets exactly one through. EnqueueAsync handles the same
-                // race the same way; without this the loser reaches the controller's catch-all and
-                // the caller is told the retry failed when it was in fact queued.
+                // ActiveDeduplicationKey lets exactly one through, and the loser's download write
+                // rolls back with its insert; the winner saved the same unblocked state. EnqueueAsync
+                // handles the same race the same way; without this the loser reaches the
+                // controller's catch-all and the caller is told the retry failed when it was in
+                // fact queued.
                 existingActive = await jobRepository.GetActiveByDownloadIdAsync(download.Id);
                 if (existingActive != null)
                 {
@@ -136,6 +153,25 @@ namespace Listenarr.Application.Downloads.Processing
 
             logger.LogInformation("Queued download {DownloadId} for post-processing with a new job: {JobId}", download.Id, job.Id);
             return job.Id;
+        }
+
+        // The save found the download or its active job changed since this request read them:
+        // another retry got there first. If that retry's job is still queued or running, it is the
+        // answer. If not, it already ran (the download may be Moved), and applying this request's
+        // stale decision would undo it, so nothing is saved and the caller can look again.
+        private async Task<string> SupersededRequeueAsync(Download download)
+        {
+            var winner = await jobRepository.GetActiveByDownloadIdAsync(download.Id);
+            if (winner != null)
+            {
+                logger.LogInformation(
+                    "Concurrent requeue superseded - returning existing active job {JobId} for download {DownloadId}",
+                    winner.Id,
+                    download.Id);
+                return winner.Id;
+            }
+
+            throw new InvalidOperationException($"Download {download.Id} changed while its retry was being queued; nothing was saved");
         }
 
         private static DownloadProcessingJob NewJobFor(Download download) => new()

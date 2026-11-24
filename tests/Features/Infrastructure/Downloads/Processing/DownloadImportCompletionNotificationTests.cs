@@ -117,8 +117,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
         [MemberData(nameof(ImportFailurePoints))]
         public async Task FailedImport_EmitsTheFailureAndNoCompletion(ImportFailurePoint failurePoint)
         {
-            // The retry budget is a setting that the processor applies to the job on every attempt,
-            // so it is set here rather than on the queued job.
+            // No retries, set through the setting: the processor applies Missing-source Max Retries
+            // to the job on every attempt, so a value written to the job itself would be overwritten.
             var (download, jobId) = await EnqueueImportAsync(FileAction.Copy, missingSourceMaxRetries: 0);
             if (failurePoint == ImportFailurePoint.SourceFilesMissing)
             {

@@ -133,11 +133,6 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                 _pollingInterval = appSettings.PollingIntervalSeconds;
             }
 
-            // Settings > Download exposes this as Download Completion Stability. It has had no
-            // reader since #535/#492 removed the old one, so until now finalization began in the
-            // same pass that first saw the client report completion.
-            var stabilityWindow = TimeSpan.FromSeconds(Math.Max(0, appSettings.DownloadCompletionStabilitySeconds));
-
             var configuredClients = await configurationService.GetDownloadClientConfigurationsAsync();
             HashSet<string> enabledClientIds = configuredClients
                 .Where(c => c.IsEnabled && !string.IsNullOrWhiteSpace(c.Id))
@@ -202,25 +197,14 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                 try
                 {
                     var previousDownloads = clientDownloads.Select(item => item.Clone()).ToList();
-                    var reportedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    var updatedDownloads = await FetchDownloadsAndJudgeStallsAsync(downloadClientGateway, client, clientDownloads, appSettings, reportedIds, cancellationToken);
+                    var pollReport = new DownloadPollReport();
+                    var updatedDownloads = await FetchDownloadsAndJudgeStallsAsync(downloadClientGateway, client, clientDownloads, appSettings, pollReport, cancellationToken);
 
-                    foreach (Download download in updatedDownloads)
+                    foreach (Download download in await WithHeldDownloadsMissingFromPollAsync(downloadClientGateway, client, updatedDownloads, clientDownloads, pollReport, cancellationToken))
                     {
                         var downloadService = scope.ServiceProvider.GetRequiredService<IDownloadService>();
                         var previousDownload = previousDownloads.FirstOrDefault(d => d.Id == download.Id);
-                        // Hold the transition, not the update. Progress and size still persist,
-                        // so the row stays current; only finalization waits. Reverting the
-                        // status rather than skipping the write also means the next cycle sees
-                        // the same transition again and can let it through once the window has
-                        // passed, without anything else needing to remember it is pending.
-                        var holdsTransition = previousDownload != null
-                            && !HasSettledAsComplete(download, previousDownload, stabilityWindow);
-                        if (holdsTransition)
-                        {
-                            download.SetStatus(previousDownload!.Status);
-                        }
-
+                        var isHeld = previousDownload != null && HoldIfUnsettled(download, previousDownload, pollReport, appSettings);
                         if (previousDownload == null ||
                             !await downloadService.TryUpdateFromClientPollAsync(previousDownload, download, cancellationToken))
                         {
@@ -228,21 +212,9 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
                             continue;
                         }
 
-                        if (holdsTransition)
-                        {
-                            continue;
-                        }
-
+                        if (isHeld) continue;
                         await TriggerCallbacks(client, download, previousDownload, cancellationToken);
                     }
-
-                    await ReleaseHeldDownloadsGoneFromClientAsync(
-                        scope.ServiceProvider.GetRequiredService<IDownloadService>(),
-                        client,
-                        clientDownloads,
-                        previousDownloads,
-                        reportedIds,
-                        cancellationToken);
 
                     if (ShouldRunOrphanCleanup(client))
                     {

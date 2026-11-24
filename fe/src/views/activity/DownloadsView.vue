@@ -201,12 +201,13 @@
                   Cancel
                 </button>
 
-                <QueueRetryButton
+                <button
+                  v-if="download.status === 'ImportBlocked'"
+                  @click="retryDownload(download.id)"
                   class="action-button retry btn"
-                  :downloadId="download.id"
-                  :status="download.status"
-                  @retried="refreshDownloads"
-                />
+                >
+                  Retry
+                </button>
 
                 <button
                   v-if="isTerminalFailure(download.status)"
@@ -257,7 +258,6 @@ import { errorTracking } from '@/services/errorTracking'
 import { logger } from '@/utils/logger'
 import { PhDownloadSimple, PhCheckCircle, PhXCircle } from '@phosphor-icons/vue'
 import InspectTorrentModal from '@/components/domain/download/InspectTorrentModal.vue'
-import QueueRetryButton from '@/components/domain/download/QueueRetryButton.vue'
 import { apiService } from '@/services/api'
 import { EmptyState, ProgressBar } from '@/components/base'
 import { useRowSelection } from '@/composables/useRowSelection'
@@ -501,6 +501,20 @@ const closeInspect = () => {
   inspectState.value.downloadId = ''
   inspectState.value.announces = null
   inspectState.value.loading = false
+}
+
+const retryDownload = async (downloadId: string) => {
+  try {
+    await downloadsStore.retryBlockedImport(downloadId)
+    toast.success('Retrying', 'The import was queued for another attempt')
+  } catch (error) {
+    errorTracking.captureException(error as Error, {
+      component: 'DownloadsView',
+      operation: 'retryBlockedImport',
+      metadata: { downloadId },
+    })
+    toast.error('Error', 'Failed to queue the import retry')
+  }
 }
 
 // Failed and ImportBlocked are the states nothing polls, retries or sweeps. They are the
