@@ -83,7 +83,7 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
             DownloadClientConfiguration client,
             List<Download> downloads,
             ApplicationSettings settings,
-            ISet<string> reportedDownloadIds,
+            DownloadPollReport pollReport,
             CancellationToken cancellationToken)
         {
             var clientStatesBeforePoll = new Dictionary<Download, object?>(ReferenceEqualityComparer.Instance);
@@ -97,7 +97,7 @@ namespace Listenarr.Infrastructure.Downloads.Monitoring
             List<Download> updatedDownloads;
             try
             {
-                updatedDownloads = await downloadClientGateway.FetchDownloadsAsync(client, downloads, cancellationToken, reportedDownloadIds);
+                updatedDownloads = await downloadClientGateway.FetchDownloadsAsync(client, downloads, cancellationToken, pollReport);
             }
             finally
             {
