@@ -4,8 +4,8 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
     base:        dc14be034ad80e6a04e4318470f327e246c26971
     base short:  dc14be034
-    patches:     768
-    version:     1.10.6+m4bard.768
+    patches:     775
+    version:     1.10.6+m4bard.775
 
 ## Patches, oldest first
 
@@ -777,6 +777,13 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     78f741d08  #-    test(quality-profiles): create the #1205 fixture profiles with upgrades off
     13a8c348f  #-    stack: manifest for dc14be034 plus 766 patches
     f339a34eb  #-    test(activity): open the unavailable-client delete on a row the list no longer shows
+    43ea638a2  #-    stack: manifest for dc14be034 plus 768 patches
+    8e887537e  #-    stack: merge PR head e196cc512
+    3af28a521  #-    stack: merge PR head a1e7ad431
+    8194e13df  #-    stack: merge PR head 13bcf1309
+    2e5f4f10d  #-    stack: merge PR head 192e51f2c
+    c80930d0b  #-    stack: pass the PR's poll report through stall detection and the status-recording gateway
+    140a1032e  #-    stack: give the bracket-field test's scoring mock the stack's bundle flag
 
 ## How this stack was built
 
@@ -804,8 +811,9 @@ PRs, merged at their current heads. #975 and #978 are upstream issues, not PRs, 
 fixes are carried from the local/upbase-174-975 and local/upbase-174-978 branches, at the heads the 1.7.4 stack
 merged. Where the stack already carried a PR in its own shape, the conflict was resolved as the 1.7.4 stack resolved
 it; the "stack:" commits after a merge remove the same duplicates as then, or point the PR's tests at this stack's
-search surface. PRs #849, #924, #925, #941, #954, #1012, #1018 and #1151 are carried as content and not
-merged, so their heads are not ancestors (#1019 was carried the same way until upstream merged it); the same holds for the fix branch of upstream issue #958
+search surface. PRs #849, #924, #925, #941, #954, #1012 and #1151 are carried as content and not
+merged, so their heads are not ancestors (#1019 was carried the same way until upstream merged it, and #1018 until the
+1.10.6 refresh below merged its head); the same holds for the fix branch of upstream issue #958
 (local/upbase-174-958). Not carried: PR #786 (replaced by the NuGet ffprobe rework, which upstream has since merged as #786), the fix branch of upstream issue
 #981 (local/upbase-174-981, conflicts with the search rework), PR #987 (carried by #1016), PR #1152 (superseded by
 the search rework).
@@ -926,6 +934,23 @@ model at that position, as for 20261119022628; its Up and Down are upstream's. T
 now seed a default profile, #1205's fixtures that create a profile through the API send upgradeAllowed false (the
 stack's cutoff rule refuses a profile that allows upgrades without a cutoff), and the stack's series section on the
 author page sends the profile selected on that page instead of relying on the default.
+
+The 1.10.6 stack ends at its manifest commit, "stack: manifest for dc14be034 plus 768 patches", which is the row before
+the four merges of this refresh, so it is an ancestor of this stack. Four upstream PR heads are then merged, one patch
+each: #1171 at e196cc512 (the automatic search selects its eligible books by id before loading their series
+memberships), the fix branch of #1209 at a1e7ad431 (PR #1213: organize keeps the source file's Unix mode), the fix branch
+of #1193 at 13bcf1309 (PR #1214: slash-joined bracket fields and bracketed language tokens in release names), and #1018
+at 192e51f2c (the download pipeline: retry-import requeues in one transaction with a race recheck, the completion
+stability window is persisted on the row and a held completion is released only once a lookup of the download itself
+confirms the client no longer has it, a removed torrent is imported from its recorded content path unless that path is
+the shared save folder, and the per-file import history moves into the processor's history partial). The stack carried
+an older line of #1018's work as separate patches (items #61, #62, #72, #145, #153, #154, #317 and later fixes). For every
+file #1018 touches the merge keeps the PR tip's content plus only the stack's independent hunks, and drops the stack's
+in-memory completion hold and its separate release step, its separate retry-import writes, its reported-id set, its
+copy of the per-file history writer (its redaction now lives in the PR's) and its second Retry button on the Downloads
+page. The commit after the merge passes the PR's poll report through the stack's stall detection and status-recording
+gateway; the next gives the #1214 test's scoring mock the stack's bundle flag. None of the four adds a migration or
+touches the model snapshot.
 
 ## Known differences from the 1.7.4 stack
 
