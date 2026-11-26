@@ -9,9 +9,9 @@ public sealed class ReleaseNarratorCreditTitleTests : BaseTests
 {
     private static readonly string[] Narrators = ["Greg Wise", "Dan Stevens"];
 
-    private static bool Confirmed(string release, string title = "Dracula")
+    private static bool Confirmed(string release, string title = "Dracula", string[]? authors = null)
     {
-        var book = new Audiobook { Title = title, Authors = ["Bram Stoker"], Narrators = [.. Narrators], Language = "English" };
+        var book = new Audiobook { Title = title, Authors = [.. authors ?? ["Bram Stoker"]], Narrators = [.. Narrators], Language = "English" };
         return new BookIdentityMatcher().Evaluate(
             BookMatchContext.From(book, catalog: TestAnnotationCatalog.Current), new() { ReleaseName = release }).IsConfirmed;
     }
@@ -79,9 +79,37 @@ public sealed class ReleaseNarratorCreditTitleTests : BaseTests
     [Theory]
     [InlineData("Bram Stoker - Narrated by Greg Wise - Unabridged - Dracula [M4B]")]
     [InlineData("Bram Stoker - Read by Greg Wise - Unabridged - Dracula [M4B]")]
-    [InlineData("[M4B] Narrated by Greg Wise - Dracula by Bram Stoker")]
     public void ALettersOnlyFieldAfterTheCreditDoesNotEndTheCredit(string release)
     {
         Assert.False(Confirmed(release));
+    }
+
+    // The keyword lies between the leading bracket and the title, so the credit leads and the title is inside it.
+    [Fact]
+    public void ACreditAfterALeadingBracketStillReachesTheTitle()
+    {
+        Assert.False(Confirmed("[M4B] Narrated by Greg Wise - Dracula by Bram Stoker"));
+    }
+
+    // The walk crosses '&' and '.', so a narrator pair or an initialled narrator does not end the credit early.
+    [Theory]
+    [InlineData("Bram Stoker - Narrated by Greg Wise & Dracula [M4B]")]
+    [InlineData("Bram Stoker - Narrated by Greg Wise & Dan Stevens, Dracula [M4B]")]
+    [InlineData("Bram Stoker - Narrated by Greg Wise, Dan Stevens & Dracula [M4B]")]
+    [InlineData("Narrated by Greg Wise & Dan Stevens - Dracula by Bram Stoker [M4B]")]
+    [InlineData("Bram Stoker - Narrated by B.J. Harrison, Dracula [M4B]")]
+    [InlineData("Bram Stoker - Narrated by Greg Wise, B.J. Harrison / Dracula [M4B]")]
+    [InlineData("Bram Stoker - Narrated by John W. Michaels - Dracula [M4B]")]
+    public void ATitleAfterAPairOrInitialledNarratorIsNotTheBook(string release)
+    {
+        Assert.False(Confirmed(release));
+    }
+
+    [Theory]
+    [InlineData("Dracula by Bram Stoker & Mary Shelley - Narrated by Greg Wise [M4B]")]
+    [InlineData("Dracula by Bram Stoker & Mary Shelley - Narrated by Greg Wise, Dan Stevens [M4B]")]
+    public void AnAuthorPairBeforeTheCreditStillMatches(string release)
+    {
+        Assert.True(Confirmed(release, authors: ["Bram Stoker", "Mary Shelley"]));
     }
 }
