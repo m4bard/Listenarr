@@ -97,7 +97,7 @@ public partial class RenameService
         {
             if (_fileSystem
                 .EnumerateFiles(previous, "*", SearchOption.AllDirectories)
-                .Any(FileUtils.MayBeAudioPendingProbe))
+                .Any(file => FileUtils.MayBeAudioPendingProbe(file)))
             {
                 // Audio, or a container that may carry audio (.mp4), is still there or below it
                 // and this book no longer tracks it: the folder is shared with another book,
