@@ -115,4 +115,8 @@ public sealed class ReleaseSeriesSubtitleTests : BaseTests
     [Fact]
     public void PositionOnlyReleaseWithAnotherPositionStillConflicts() =>
         Assert.False(Match(Book(series: null, position: null), "Marisol Vega - Orchard, Book 4").IsConfirmed);
+
+    [Fact]
+    public void StoredSeriesOfTheSameNameStaysUnambiguousForVariantSpellings() =>
+        Assert.True(Match(Book(), "Marisol Vega - The Northern Shore, Book 3 - Orchard").IsConfirmed);
 }
