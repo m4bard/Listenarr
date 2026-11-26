@@ -97,11 +97,16 @@ public sealed record BookMatchContext(
             .Select(IdentityText.Canonical).Where(IdentityText.IsContributorName)
             .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(n => n, StringComparer.Ordinal).ToArray();
         var subtitleSeries = ReleaseAnnotationGrammar.SeriesFromSubtitle(subtitle);
+        var seasonless = subtitleSeries is null ? null : ReleaseAnnotationGrammar.SeasonlessSeries(subtitleSeries);
         var series = (book.SeriesMemberships ?? []).Select(s => new ReleaseSeriesReference(
                 IdentityText.Canonical(s.SeriesName), IdentityText.Canonical(s.SeriesNumber)))
             .Append(new(IdentityText.Canonical(book.Series), IdentityText.Canonical(book.SeriesNumber)))
             .Concat(subtitleSeries is null ? [] : new[] { subtitleSeries })
-            .Where(s => s.Name.Length > 0).Distinct()
+            .Where(s => s.Name.Length > 0).Distinct().ToList();
+        // A stored series of the same name keeps its own position; the season-less spelling never overrides it.
+        if (seasonless is { Name.Length: > 0 } && !series.Any(s => string.Equals(s.Name, seasonless.Name, StringComparison.OrdinalIgnoreCase)))
+            series.Add(seasonless);
+        var seriesReferences = series
             .OrderBy(s => s.Name, StringComparer.Ordinal).ThenBy(s => s.Position, StringComparer.Ordinal).ToArray();
         var p = profile ?? book.QualityProfile;
         var payload = JsonSerializer.Serialize(new
@@ -117,7 +122,7 @@ public sealed record BookMatchContext(
             book.Series,
             book.SeriesNumber,
             Narrators = narrators,
-            SeriesReferences = series,
+            SeriesReferences = seriesReferences,
             Profile = p == null ? null : new
             {
                 p.Id,
@@ -144,7 +149,7 @@ public sealed record BookMatchContext(
             AnnotationCatalog = catalog,
             Isbn = book.Isbn?.ToArray() ?? [],
             Narrators = narrators,
-            SeriesReferences = series,
+            SeriesReferences = seriesReferences,
             TitleParts = titleParts,
             Language = book.Language,
             PreferredLanguages = Array.AsReadOnly((p?.PreferredLanguages ?? []).ToArray()),

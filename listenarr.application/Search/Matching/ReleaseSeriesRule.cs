@@ -32,11 +32,22 @@ internal static class ReleaseSeriesRule
         @"^(?<name>.+?),\s*(?:book|bk|volume|vol|part)\s+(?<position>\d{1,4}(?:\.\d{1,3})?|[IVXLCDM]{1,12})$",
         RegexOptions.NonBacktracking | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+    private static readonly Regex SeasonSuffix = new(
+        @"^(?<base>.+?)\s+season\s+\d{1,3}$",
+        RegexOptions.NonBacktracking | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     public static ReleaseSeriesReference? SeriesFromSubtitle(string subtitle)
     {
         var match = SubtitleSeries.Match(subtitle);
         return match.Success && TryPosition(match.Groups["position"].Value, out _)
             ? new(match.Groups["name"].Value.Trim(), match.Groups["position"].Value) : null;
+    }
+
+    /// <summary>A "Series Season N" label also names the series without its season, which is how releases usually spell it.</summary>
+    public static ReleaseSeriesReference? SeasonlessSeries(ReleaseSeriesReference reference)
+    {
+        var match = SeasonSuffix.Match(reference.Name);
+        return match.Success ? reference with { Name = match.Groups["base"].Value.Trim() } : null;
     }
 
     public static (int Start, int Length)? PositionRange(string value)

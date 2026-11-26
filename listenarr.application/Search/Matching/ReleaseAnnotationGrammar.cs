@@ -21,6 +21,7 @@ namespace Listenarr.Application.Search.Matching;
 internal static class ReleaseAnnotationGrammar
 {
     public static ReleaseSeriesReference? SeriesFromSubtitle(string subtitle) => ReleaseSeriesRule.SeriesFromSubtitle(subtitle);
+    public static ReleaseSeriesReference? SeasonlessSeries(ReleaseSeriesReference reference) => ReleaseSeriesRule.SeasonlessSeries(reference);
     public static bool IsTechnical(string value) => ReleaseTechnicalRule.Match(value);
     public static bool Separator(char value) => "[]{}();:,&-‐‑‒–—―−".Contains(value);
     public static bool PersonEqual(string known, string candidate, bool scene) =>
