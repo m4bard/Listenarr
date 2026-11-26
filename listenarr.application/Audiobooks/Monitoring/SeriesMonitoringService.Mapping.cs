@@ -10,7 +10,7 @@ namespace Listenarr.Application.Audiobooks.Monitoring
 {
     public partial class SeriesMonitoringService : ISeriesMonitoringService
     {
-        private static AudibleBookMetadata MapToMetadata(AudibleSearchResult book)
+        private static AudibleBookMetadata MapToMetadata(AudibleSearchResult book, string? region)
         {
             var runtime = book.LengthMinutes ?? book.RuntimeLengthMin ?? book.RuntimeMinutes;
 
@@ -40,7 +40,8 @@ namespace Listenarr.Application.Audiobooks.Monitoring
                 PublishedDate = book.ReleaseDate,
                 PublishYear = TryExtractPublishYear(book.ReleaseDate),
                 Isbn = string.IsNullOrWhiteSpace(book.Isbn) ? new List<string>() : new List<string> { book.Isbn },
-                Source = "Audible"
+                Source = "Audible",
+                Region = region
             };
 
             // Preserve the series ASIN (not just name/position) so books added via series
@@ -152,6 +153,11 @@ namespace Listenarr.Application.Audiobooks.Monitoring
         private static string NormalizeRegion(string? region)
         {
             return AudiobookIdentifierNormalizer.NormalizeRegion(region) ?? "us";
+        }
+
+        private static string ResolveEffectiveRegion(string? storedRegion)
+        {
+            return AudibleRequestHelper.ResolveSupportedRegion(NormalizeRegion(storedRegion));
         }
 
         private static string NormalizeLanguage(string? language, bool fallbackToEnglish)
