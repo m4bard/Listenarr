@@ -10,6 +10,11 @@ internal static class ReleaseAnnotationRules
         ReleaseAssessmentBudget budget)
     {
         var result = ReleaseTechnicalRule.Recognize(value, bracketed, inBracket, signed, context.AnnotationCatalog, technical);
+        // A language code of at most three letters (the parser's table mixes codes and full names, so length is the only code test)
+        // that is also a known credit or series name is that name, not a declared language. Full names such as German stay declared.
+        if (result.RuleId == "technical.language" && value.Length <= 3 && (context.Authors.Concat(context.Narrators).Any(n => IdentityText.PersonEqual(n, value))
+            || context.SeriesCatalog.Resolve(value).Count > 0))
+            result = default;
         var narrator = ReleaseNarratorRule.Recognize(value, tail, context, scene, beforeTitle, technical, budget);
         var group = ReleaseGroupRule.Recognize(value, beforeTitle, bracketed, technical, delimitedPrefix, context.AnnotationCatalog);
         if (narrator.Outcome == AnnotationOutcome.Ambiguous) return narrator;
