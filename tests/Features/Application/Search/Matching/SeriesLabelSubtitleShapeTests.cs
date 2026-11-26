@@ -28,6 +28,10 @@ public sealed class SeriesLabelSubtitleShapeTests : BaseTests
         Assert.True(result.IsConfirmed, result.Status + " " + result.Reason);
     }
 
+    [Fact]
+    public void MatchingBookNumberInTheReleaseIsAccepted() =>
+        Assert.True(Match(Book(position: "5"), "Marisol Vega - Gardeners, Book 5 - Wordone 2021").IsConfirmed);
+
     [Theory]
     [InlineData("1")]
     [InlineData("5")]
@@ -36,7 +40,7 @@ public sealed class SeriesLabelSubtitleShapeTests : BaseTests
         Assert.True(Match(Book(position: stored), "Marisol.Vega.-.Gardeners.-.Wordone.2021").IsConfirmed);
 
     [Theory]
-    [InlineData("Marisol.Vega.-.Gardeners.6.-.Wordone.2021", "5")]
+    [InlineData("Marisol Vega - Gardeners, Book 6 - Wordone 2021", "5")]
     [InlineData("Marisol.Vega.-.Other.Coast.-.Wordone.2021", "5")]
     [InlineData("Other.Writer.-.Gardeners.-.Wordone.2021", "5")]
     [InlineData("Marisol.Vega.-.Gardeners.-.Wordone.Grove.2021", "5")]
@@ -46,5 +50,5 @@ public sealed class SeriesLabelSubtitleShapeTests : BaseTests
 
     [Fact]
     public void RealPositionConflictWithoutLabelSubtitleStillRejects() =>
-        Assert.False(Match(Book(subtitle: null, position: "5"), "Marisol.Vega.-.Gardeners.6.-.Wordone.2021").IsConfirmed);
+        Assert.False(Match(Book(subtitle: null, position: "5"), "Marisol Vega - Gardeners, Book 6 - Wordone 2021").IsConfirmed);
 }
