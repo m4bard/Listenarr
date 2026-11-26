@@ -94,7 +94,7 @@ public sealed record BookMatchContext(
         // A legacy combined title has no verified subtitle, but a tail that is wholly a series and book label
         // is structural evidence: the text before it is the work title and the tail names its series.
         var labelTail = subtitle;
-        if (subtitle.Length == 0 && title.IndexOf(':') is > 0 and var colon
+        if (subtitle.Length == 0 && title.LastIndexOf(':') is > 0 and var colon
             && ReleaseAnnotationGrammar.SeriesFromSubtitle(title[(colon + 1)..].Trim()) != null)
         {
             labelTail = title[(colon + 1)..].Trim();
@@ -106,16 +106,11 @@ public sealed record BookMatchContext(
             .Select(IdentityText.Canonical).Where(IdentityText.IsContributorName)
             .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(n => n, StringComparer.Ordinal).ToArray();
         var subtitleSeries = ReleaseAnnotationGrammar.SeriesFromSubtitle(labelTail);
-        var seasonless = subtitleSeries is null ? null : ReleaseAnnotationGrammar.SeasonlessSeries(subtitleSeries);
         var series = (book.SeriesMemberships ?? []).Select(s => new ReleaseSeriesReference(
                 IdentityText.Canonical(s.SeriesName), IdentityText.Canonical(s.SeriesNumber)))
             .Append(new(IdentityText.Canonical(book.Series), IdentityText.Canonical(book.SeriesNumber)))
             .Concat(subtitleSeries is null ? [] : new[] { subtitleSeries })
-            .Where(s => s.Name.Length > 0).Distinct().ToList();
-        // A stored series of the same name keeps its own position; the season-less spelling never overrides it.
-        if (seasonless is { Name.Length: > 0 } && !series.Any(s => string.Equals(s.Name, seasonless.Name, StringComparison.OrdinalIgnoreCase)))
-            series.Add(seasonless);
-        var seriesReferences = series
+            .Where(s => s.Name.Length > 0).Distinct()
             .OrderBy(s => s.Name, StringComparer.Ordinal).ThenBy(s => s.Position, StringComparer.Ordinal).ToArray();
         var p = profile ?? book.QualityProfile;
         var payload = JsonSerializer.Serialize(new
@@ -131,7 +126,7 @@ public sealed record BookMatchContext(
             book.Series,
             book.SeriesNumber,
             Narrators = narrators,
-            SeriesReferences = seriesReferences,
+            SeriesReferences = series,
             Profile = p == null ? null : new
             {
                 p.Id,
@@ -158,7 +153,7 @@ public sealed record BookMatchContext(
             AnnotationCatalog = catalog,
             Isbn = book.Isbn?.ToArray() ?? [],
             Narrators = narrators,
-            SeriesReferences = seriesReferences,
+            SeriesReferences = series,
             TitleParts = titleParts,
             Language = book.Language,
             PreferredLanguages = Array.AsReadOnly((p?.PreferredLanguages ?? []).ToArray()),

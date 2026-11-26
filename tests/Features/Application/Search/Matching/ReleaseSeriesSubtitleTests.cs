@@ -100,4 +100,19 @@ public sealed class ReleaseSeriesSubtitleTests : BaseTests
     [InlineData("Wordone: Gardeners")]
     public void WholeTitleWithOtherTailsStillRequiresTheFullTitle(string title) =>
         Assert.False(Match(Possessive(title, null), "Marisol Vega - Wordone 2021").IsConfirmed);
+
+    [Fact]
+    public void MiddleSubtitleBeforeTheSeriesLabelIsNotDropped() =>
+        Assert.False(Match(Possessive("Wordone: A Gentle Descriptive Subtitle: Gardener's Season 2, Book 1", null),
+            "Marisol Vega - Wordone 2021").IsConfirmed);
+
+    [Theory]
+    [InlineData("Marisol Vega - Orchard, Book 3")]
+    [InlineData("Marisol Vega - Orchard, Book 3 [M4B]")]
+    public void PositionOnlyReleaseStillBindsToTheOnlySubtitleSeries(string release) =>
+        Assert.True(Match(Book(series: null, position: null), release).IsConfirmed);
+
+    [Fact]
+    public void PositionOnlyReleaseWithAnotherPositionStillConflicts() =>
+        Assert.False(Match(Book(series: null, position: null), "Marisol Vega - Orchard, Book 4").IsConfirmed);
 }

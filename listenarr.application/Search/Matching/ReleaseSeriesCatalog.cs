@@ -32,6 +32,9 @@ internal sealed class ReleaseSeriesCatalog
         {
             Add(fact.Name);
             foreach (var alias in catalog.AliasesFor(fact.Name)) Add(alias);
+            // "Series Season N" is also spelled "Series"; an alias keeps it the same fact unless another fact owns that name.
+            if (ReleaseSeriesRule.SeasonlessSeries(new(fact.Name, "")) is { } seasonless
+                && !Facts.Any(f => Key(f.Name) == Key(seasonless.Name))) Add(seasonless.Name);
             void Add(string name)
             {
                 names.Add((VariantKey(Key(name)), new(fact, true)));
