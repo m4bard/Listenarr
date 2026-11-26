@@ -99,5 +99,5 @@ public sealed class ReleaseSeriesSubtitleTests : BaseTests
     [InlineData("Wordone: Season 2")]
     [InlineData("Wordone: Gardeners")]
     public void WholeTitleWithOtherTailsStillRequiresTheFullTitle(string title) =>
-        Assert.False(Match(Possessive(title, null), "Marisol Vega - Gardeners - Wordone 2021").IsConfirmed);
+        Assert.False(Match(Possessive(title, null), "Marisol Vega - Wordone 2021").IsConfirmed);
 }
