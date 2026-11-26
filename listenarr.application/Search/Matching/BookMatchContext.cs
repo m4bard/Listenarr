@@ -95,6 +95,7 @@ public sealed record BookMatchContext(
         // is structural evidence: the text before it is the work title and the tail names its series.
         var labelTail = subtitle;
         if (subtitle.Length == 0 && title.LastIndexOf(':') is > 0 and var colon
+            && !(char.IsDigit(title[colon - 1]) && colon + 1 < title.Length && char.IsDigit(title[colon + 1]))
             && ReleaseAnnotationGrammar.SeriesFromSubtitle(title[(colon + 1)..].Trim()) != null)
         {
             labelTail = title[(colon + 1)..].Trim();

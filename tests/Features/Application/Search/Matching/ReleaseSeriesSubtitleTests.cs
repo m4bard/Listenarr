@@ -119,4 +119,15 @@ public sealed class ReleaseSeriesSubtitleTests : BaseTests
     [Fact]
     public void StoredSeriesOfTheSameNameStaysUnambiguousForVariantSpellings() =>
         Assert.True(Match(Book(), "Marisol Vega - The Northern Shore, Book 3 - Orchard").IsConfirmed);
+
+    [Theory]
+    [InlineData("The Northern Shore", "Marisol Vega - Northern Shore - Orchard")]
+    [InlineData("Northern Shore Series", "Marisol Vega - Northern Shore, Book 3 - Orchard")]
+    [InlineData("Northern Shore Saga", "Marisol Vega - Northern Shore 3 - Orchard")]
+    public void StoredVariantOfTheSeasonlessNameKeepsTheSeriesUnambiguous(string stored, string release) =>
+        Assert.True(Match(Book(series: stored), release).IsConfirmed);
+
+    [Fact]
+    public void ColonInsideATimeIsNotATitleSeparator() =>
+        Assert.False(Match(Possessive("Meet at 10:30, Book 1", null), "Marisol Vega - Meet at 10 2021").IsConfirmed);
 }
