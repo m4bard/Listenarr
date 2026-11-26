@@ -64,6 +64,11 @@ namespace Listenarr.Tests.Mocks.DownloadClients
         /// </summary>
         public string? MalformedFilesForHash { get; set; }
 
+        /// <summary>
+        /// Answer every files request with this body instead of an empty list.
+        /// </summary>
+        public string? FilesResponseOverride { get; set; }
+
         private int _filesRequestCount;
 
         // Applied only to full-queue requests (no hashes filter), so a test can let the
@@ -195,7 +200,7 @@ namespace Listenarr.Tests.Mocks.DownloadClients
                 return MockUtils.GetCannedResponse("[{\"name\": ");
             }
 
-            return MockUtils.GetCannedResponse("[]");
+            return MockUtils.GetCannedResponse(FilesResponseOverride ?? "[]");
         }
 
         private async Task<HttpResponseMessage> GetVersion(HttpRequestMessage request, CancellationToken ct)
