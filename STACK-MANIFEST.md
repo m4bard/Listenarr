@@ -2,10 +2,10 @@
 
 This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
-    base:        dc14be034ad80e6a04e4318470f327e246c26971
-    base short:  dc14be034
-    patches:     775
-    version:     1.10.6+m4bard.775
+    base:        ba95cd7b87bb39598cf1c3acc0fd2243583ce54b
+    base short:  ba95cd7b8
+    patches:     789
+    version:     1.10.12+m4bard.789
 
 ## Patches, oldest first
 
@@ -778,12 +778,26 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     13a8c348f  #-    stack: manifest for dc14be034 plus 766 patches
     f339a34eb  #-    test(activity): open the unavailable-client delete on a row the list no longer shows
     43ea638a2  #-    stack: manifest for dc14be034 plus 768 patches
-    8e887537e  #-    stack: merge PR head e196cc512
-    3af28a521  #-    stack: merge PR head a1e7ad431
-    8194e13df  #-    stack: merge PR head 13bcf1309
+    8e887537e  #-    stack: merge PR head e196cc512 [merged upstream as #1171 in 1.10.8, not carried]
+    3af28a521  #-    stack: merge PR head a1e7ad431 [merged upstream as #1213 in 1.10.10, not carried]
+    8194e13df  #-    stack: merge PR head 13bcf1309 [merged upstream as #1214 in 1.10.12, not carried]
     2e5f4f10d  #-    stack: merge PR head 192e51f2c
     c80930d0b  #-    stack: pass the PR's poll report through stall detection and the status-recording gateway
     140a1032e  #-    stack: give the bracket-field test's scoring mock the stack's bundle flag
+    27dbb44ff  #-    stack: manifest for dc14be034 plus 775 patches
+    1a883b296  #-    stack: merge v1.10.12-canary
+    98b6fe53a  #-    stack: merge PR head 4f8edb812
+    8a2303e83  #-    stack: merge PR head f8cc6719f
+    76a2b8a3b  #-    stack: merge PR head bf376c66b
+    e6ac167e4  #-    stack: merge PR head 88682864b
+    0ae1fbbfa  #-    stack: merge PR head e3c57b9d3
+    15c8350f5  #-    stack: merge PR head 637419f19
+    14a5a0f5e  #-    stack: merge PR head aebd79fe1
+    daf778257  #-    stack: merge PR head cd1954768
+    061cb9aeb  #-    stack: merge PR head 0c01eb79f
+    c4a0b650e  #-    stack: merge PR head 9f2609af2
+    3ec3cfad0  #-    stack: merge PR head 31e9aa5b3
+    c27a16129  #-    stack: pass the stack's two-parameter audio probe to organize companions as a lambda
 
 ## How this stack was built
 
@@ -806,17 +820,19 @@ requests. The stack's query plan is not carried; it comes back after the request
 lands.
 
 The merges ("stack: merge #N") bring in #930, #975, #978, #1015, #1017, #1023, #1119 (since merged upstream), #1155 and #1164 in that
-order, then #1016, so each merged head is an ancestor of this stack. All of them except #975 and #978 are upstream
+order, then #1016, so each merged head is an ancestor of this stack (the 1.10.12 refresh below merges the current heads of
+#1015, #1017, #1023, #1155 and #1164). All of them except #975 and #978 are upstream
 PRs, merged at their current heads. #975 and #978 are upstream issues, not PRs, so they have no upstream head: their
 fixes are carried from the local/upbase-174-975 and local/upbase-174-978 branches, at the heads the 1.7.4 stack
 merged. Where the stack already carried a PR in its own shape, the conflict was resolved as the 1.7.4 stack resolved
 it; the "stack:" commits after a merge remove the same duplicates as then, or point the PR's tests at this stack's
-search surface. PRs #849, #924, #925, #941, #954, #1012 and #1151 are carried as content and not
-merged, so their heads are not ancestors (#1019 was carried the same way until upstream merged it, and #1018 until the
+search surface. PRs #849, #924, #925, #941, #954 and #1012 are carried as content and not
+merged, so their heads are not ancestors (#1151 was carried the same way until the 1.10.12 refresh merged its head) (#1019 was carried the same way until upstream merged it, and #1018 until the
 1.10.6 refresh below merged its head); the same holds for the fix branch of upstream issue #958
 (local/upbase-174-958). Not carried: PR #786 (replaced by the NuGet ffprobe rework, which upstream has since merged as #786), the fix branch of upstream issue
 #981 (local/upbase-174-981, conflicts with the search rework), PR #987 (carried by #1016), PR #1152 (superseded by
-the search rework).
+the search rework), PR #1172, and PR #1180, whose retry changes upstream's search paths, which this stack replaces
+(it needs a port onto the request gate).
 
 After the merges come the stack-only fixes. qBittorrent removal sanitizes the client's response body before it logs
 a failed presence check or a failed delete: CR/LF become spaces and the body is cut at 500 characters, so it cannot
@@ -952,6 +968,32 @@ page. The commit after the merge passes the PR's poll report through the stack's
 gateway; the next gives the #1214 test's scoring mock the stack's bundle flag. None of the four adds a migration or
 touches the model snapshot.
 
+The 1.10.6 refresh ends at its manifest commit, "stack: manifest for dc14be034 plus 775 patches", which is the row
+before the 1.10.12 merge. Upstream canary 1.10.12 (ba95cd7b8) is then merged in ("stack: merge v1.10.12-canary"), so the
+1.10.6 stack is an ancestor of this one. 1.10.7 to 1.10.12 bring upstream #1226 (the MyAnonamouse torrent filter sent as
+tor[searchType]), our #1171, the qBittorrent URL Base (#1228), our #1213 (organize keeps the source file's Unix mode and
+owner read on copies of files another user owns), organize companion files (#1230: covers and metadata files move with a
+book on a folder-changing organize and stay where another book may use them) and our #1214 (slash-joined bracket fields,
+narrator credits and language tokens in release names), each with its version bump. They add no migration. #1171,
+#1213 and #1214 are therefore merged upstream, not carried: the rows of their merges above stay in the history and are
+marked so, and every file those PRs touch is upstream's version, apart from the bundle flag on two bracket-field tests'
+scoring mocks (the stack's ScoreSearchResults takes a third argument) and the stack's own changes in AudiobookRepository
+and the platform test attributes. The merge had eight conflicts. MyAnonamouse keeps the stack's request factory, which
+already sent the filter as tor[searchType] with upstream's values, plus the caller's language, perpage and no freeleech
+wedge on a search; upstream's fallback to a title or author mode is not taken, because those are not values the tracker
+accepts (the fields are chosen through tor[srchIn]). The download client form spec keeps the stack's tests beside
+upstream's URL Base ones, three of upstream's new qBittorrent tests use a host name in place of a private address, and
+the companion pass calls the stack's two-parameter audio probe through a lambda.
+
+The refresh then merges the current heads of the carried PRs: #1018 at 4f8edb812 (removed-torrent recovery imports only
+the files the client listed), #1015 at f8cc6719f and #1164 at bf376c66b (rebases with identical patches, no file
+changes), #1155 at 88682864b, #1017 at e3c57b9d3 and #1023 at 637419f19 (rebases whose adaptations the stack had already
+made in its own shape, so those merges change no file either), and #1151 at aebd79fe1 (host-native rescan test paths
+and the released-schema write context). It then adds #1195 at cd1954768 (SABnzbd finds a completed job by its id),
+#1222 at 0c01eb79f (books added by monitoring keep the monitor's region), #1223 at 9f2609af2 (manual import with
+metadata processing off) and #1224 at 31e9aa5b3 (a release the client already holds for a deleted book is adopted
+instead of refused), one merge each. #1224's processing job service is the stack's existing constructor parameter.
+
 ## Known differences from the 1.7.4 stack
 
 - A fresh install stores MaxConcurrentIndexerSearches=0. Rolled back to the 1.7.4 stack, such an install searches
@@ -960,8 +1002,9 @@ touches the model snapshot.
   cooldown row and there is no SignalR nudge; the System page card shows each cooldown with its end time and reason.
 - Accepted for this bake: the stack's single-failure block, decrement on success, network hold, 401/403
   escalation and the operator fan-out setting are gone. The gate described above replaces them.
-- #914 is the older head: migration 20261112054145. Its current head renames the migration to 20261116120000 for
-  the same column, so a later upgrade to it adds a second migration and needs its own migration check.
+- #914 is the older head: migration 20261112054145. Its current head (44acf7dba) renames the migration to
+  20261121200000 for the same column and reworks the cover art path, so taking it means keeping this migration id
+  (a database on this stack has already applied it) and its own migration check.
 - The ffprobe checksum URL redaction from #1016 has no call site, because the NuGet ffprobe package (now upstream's
   #786) replaced the download path.
 
@@ -970,5 +1013,6 @@ the fork-local #914 at 20261112054145, and #1151 at 20261114004926. Upstream add
 20261029020400 and 1.9.2 (1.8.5, 1.8.6, 1.9.0, 1.9.1 and 1.9.2 add none); 1.10.0 adds 20261119022628_AddAudiobookAddedDate,
 which sorts after every fork migration, so a database on the 1.9.2 stack applies it as the one pending migration. 1.10.6 adds
 20261121052354_AddMonitoringQualityProfile, which also sorts after every fork migration, so a database on the 1.10.5 stack
-applies it as the one pending migration. The history repoint for a database that ran an earlier stack is recomputed
+applies it as the one pending migration. 1.10.7 to 1.10.12 add none, and neither do the PR heads merged in the 1.10.12
+refresh (#1023 and #1151 keep their ids). The history repoint for a database that ran an earlier stack is recomputed
 with this build's upgrade packet.
