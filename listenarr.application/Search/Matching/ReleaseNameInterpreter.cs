@@ -166,7 +166,9 @@ public static class ReleaseNameInterpreter
     private static bool InExplicitNarrator(string text, int at)
     {
         var boundary = at - 1;
-        while (boundary >= 0 && (text[boundary] == '/' || IsNarratorColon(text, boundary) || !ReleaseAnnotationGrammar.Separator(text[boundary]))) boundary--;
+        // The walk crosses the characters a narrator credit may contain (see ReleaseNarratorRule), so a title
+        // after "Narrated by A, B" or "Narrated by A - B" is still seen as inside the credit.
+        while (boundary >= 0 && (text[boundary] is '/' or ',' or '-' || IsNarratorColon(text, boundary) || !ReleaseAnnotationGrammar.Separator(text[boundary]))) boundary--;
         var prefix = text[(boundary + 1)..at];
         return prefix.Contains("narrated by ", StringComparison.OrdinalIgnoreCase)
             || prefix.Contains("read by ", StringComparison.OrdinalIgnoreCase)
