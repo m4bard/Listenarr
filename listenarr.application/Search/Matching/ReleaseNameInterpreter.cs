@@ -166,9 +166,12 @@ public static class ReleaseNameInterpreter
     private static bool InExplicitNarrator(string text, int at)
     {
         var boundary = at - 1;
-        // The walk crosses the characters a narrator credit may contain (see ReleaseNarratorRule), so a title
-        // after "Narrated by A, B" or "Narrated by A - B" is still seen as inside the credit.
-        while (boundary >= 0 && (text[boundary] is '/' or ',' or '-' || IsNarratorColon(text, boundary) || !ReleaseAnnotationGrammar.Separator(text[boundary]))) boundary--;
+        // Walk left across everything a narrator credit name may contain (ReleaseNarratorRule: letters, marks,
+        // whitespace and . ' ’ , / -, plus the narrator colon), including a comma or a hyphen between the credit and
+        // the title. Digits, brackets, ';', '&', other colons and Unicode dashes end the walk, so a field such as a
+        // year or a bracketed tag separates the credit from the title. Any narrator keyword in the text walked
+        // over, even before a spaced hyphen, marks the title as part of the credit.
+        while (boundary >= 0 && (IsCreditCharacter(text[boundary]) || IsNarratorColon(text, boundary))) boundary--;
         var prefix = text[(boundary + 1)..at];
         return prefix.Contains("narrated by ", StringComparison.OrdinalIgnoreCase)
             || prefix.Contains("read by ", StringComparison.OrdinalIgnoreCase)
@@ -176,6 +179,12 @@ public static class ReleaseNameInterpreter
             || prefix.Contains("narrator:", StringComparison.OrdinalIgnoreCase)
             || prefix.Contains("narrator :", StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool IsCreditCharacter(char value) => value is '.' or '\'' or '’' or ',' or '/' or '-'
+        || char.IsWhiteSpace(value) || char.IsLetter(value)
+        || char.GetUnicodeCategory(value) is System.Globalization.UnicodeCategory.NonSpacingMark
+            or System.Globalization.UnicodeCategory.SpacingCombiningMark
+            or System.Globalization.UnicodeCategory.EnclosingMark;
 
     private static bool IsNarratorColon(string text, int index) => text[index] == ':'
         && text.AsSpan(0, index).TrimEnd().EndsWith("narrator", StringComparison.OrdinalIgnoreCase);

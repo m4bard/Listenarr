@@ -16,6 +16,8 @@ public sealed class ReleaseNarratorCreditTitleTests : BaseTests
             BookMatchContext.From(book, catalog: TestAnnotationCatalog.Current), new() { ReleaseName = release }).IsConfirmed;
     }
 
+    // Regression guards: these were already rejected before the credit walk changed, because the unexplained
+    // leading title leaves the release incomplete. They pin that this stays true.
     [Theory]
     [InlineData("Frankenstein - Narrated by Greg Wise, Dracula [M4B]")]
     [InlineData("Frankenstein - Narrated by Greg Wise - Dracula [M4B]")]
@@ -23,6 +25,12 @@ public sealed class ReleaseNarratorCreditTitleTests : BaseTests
     [InlineData("Frankenstein - Read by Greg Wise, Dracula [M4B]")]
     [InlineData("Frankenstein - Narrator: Greg Wise, Dracula [M4B]")]
     [InlineData("Frankenstein - Narrator : Greg Wise, Dracula [M4B]")]
+    public void GuardAnUnexplainedLeadingTitleBeforeACreditIsRejected(string release)
+    {
+        Assert.False(Confirmed(release));
+    }
+
+    [Theory]
     [InlineData("Bram Stoker - Narrated by Greg Wise, Dracula [M4B]")]
     [InlineData("Bram Stoker - Narrated by Greg Wise - Dracula [M4B]")]
     [InlineData("Bram Stoker - Read by Greg Wise, Dracula [M4B]")]
@@ -50,5 +58,30 @@ public sealed class ReleaseNarratorCreditTitleTests : BaseTests
     public void ATitleOutsideTheNarratorCreditStillMatches(string release)
     {
         Assert.True(Confirmed(release));
+    }
+
+    // The credit walk stops at any character a credit name cannot contain, so a field between the credit and
+    // the title separates them.
+    [Theory]
+    [InlineData("Bram Stoker - Narrated by Greg Wise – Dracula [M4B]")]
+    [InlineData("Bram Stoker - Narrated by Greg Wise - 2019 - Dracula [M4B]")]
+    [InlineData("Bram Stoker - Narrated by Greg Wise, 2019, Dracula [M4B]")]
+    [InlineData("Bram Stoker - Narrated by Greg Wise, Dan Stevens; Dracula [M4B]")]
+    [InlineData("Bram Stoker - Narrated by Greg Wise [M4B] - Dracula")]
+    [InlineData("Narrated by Greg Wise [M4B] - Dracula by Bram Stoker")]
+    public void AFieldThatIsNotACreditNameEndsTheCreditBeforeTheTitle(string release)
+    {
+        Assert.True(Confirmed(release));
+    }
+
+    // Judgement call: a letters-only field (Unabridged) between the credit and the title cannot be told apart
+    // from a further credit name, so the title is still treated as inside the credit and the release is missed.
+    [Theory]
+    [InlineData("Bram Stoker - Narrated by Greg Wise - Unabridged - Dracula [M4B]")]
+    [InlineData("Bram Stoker - Read by Greg Wise - Unabridged - Dracula [M4B]")]
+    [InlineData("[M4B] Narrated by Greg Wise - Dracula by Bram Stoker")]
+    public void ALettersOnlyFieldAfterTheCreditDoesNotEndTheCredit(string release)
+    {
+        Assert.False(Confirmed(release));
     }
 }
