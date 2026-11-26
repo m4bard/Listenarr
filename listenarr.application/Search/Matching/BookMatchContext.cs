@@ -91,12 +91,21 @@ public sealed record BookMatchContext(
                 titles.Add(mainTitle + ":" + subtitle);
             }
         }
+        // A legacy combined title has no verified subtitle, but a tail that is wholly a series and book label
+        // is structural evidence: the text before it is the work title and the tail names its series.
+        var labelTail = subtitle;
+        if (subtitle.Length == 0 && title.IndexOf(':') is > 0 and var colon
+            && ReleaseAnnotationGrammar.SeriesFromSubtitle(title[(colon + 1)..].Trim()) != null)
+        {
+            labelTail = title[(colon + 1)..].Trim();
+            titles.Add(title[..colon].TrimEnd());
+        }
         var authors = (book.Authors ?? []).Where(a => !string.IsNullOrWhiteSpace(a))
             .Select(IdentityText.Canonical).Where(IdentityText.IsContributorName).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var narrators = (book.Narrators ?? []).Where(n => !string.IsNullOrWhiteSpace(n))
             .Select(IdentityText.Canonical).Where(IdentityText.IsContributorName)
             .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(n => n, StringComparer.Ordinal).ToArray();
-        var subtitleSeries = ReleaseAnnotationGrammar.SeriesFromSubtitle(subtitle);
+        var subtitleSeries = ReleaseAnnotationGrammar.SeriesFromSubtitle(labelTail);
         var seasonless = subtitleSeries is null ? null : ReleaseAnnotationGrammar.SeasonlessSeries(subtitleSeries);
         var series = (book.SeriesMemberships ?? []).Select(s => new ReleaseSeriesReference(
                 IdentityText.Canonical(s.SeriesName), IdentityText.Canonical(s.SeriesNumber)))

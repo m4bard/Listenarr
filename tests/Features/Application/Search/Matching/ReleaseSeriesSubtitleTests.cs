@@ -69,4 +69,35 @@ public sealed class ReleaseSeriesSubtitleTests : BaseTests
     [InlineData("Book 3 of 5", "Marisol Vega - Northern Shore - Orchard 2010", true)]
     public void OtherSubtitleShapesKeepTheirBehaviourWhenTheSeriesIsStored(string subtitle, string release, bool expected) =>
         Assert.Equal(expected, Match(Book(subtitle), release).IsConfirmed);
+
+    private static Audiobook Possessive(string title, string? subtitle) => new()
+    { Title = title, Subtitle = subtitle, Authors = ["Marisol Vega", "Ramon de Ocampo"] };
+
+    [Theory]
+    [InlineData("Marisol.Vega.-.Gardens.-.Wordone.2021")]
+    [InlineData("Marisol.Vega.-.Gardens.Season.2.-.Wordone.2021")]
+    [InlineData("Marisol Vega - Gardener's - Wordone 2021")]
+    public void PossessiveSeriesInSubtitleFieldMatchesTheReleaseSpelling(string release)
+    {
+        var result = Match(Possessive("Wordone", "Gardener's Season 2, Book 1"), release.Replace("Gardens", "Gardeners"));
+        Assert.True(result.IsConfirmed, result.Status + " " + result.Reason);
+    }
+
+    [Theory]
+    [InlineData("Marisol.Vega.-.Gardeners.-.Wordone.2021", true)]
+    [InlineData("Marisol Vega - Gardener's Season 2, Book 1 - Wordone 2021", true)]
+    [InlineData("Marisol Vega - Wordone: Gardener's Season 2, Book 1", true)]
+    [InlineData("Marisol Vega - Gardeners, Book 2 - Wordone 2021", false)]
+    [InlineData("Marisol Vega - Gardeners - Wordone Grove 2021", false)]
+    [InlineData("Marisol Vega - Gardeners - Wordtwo 2021", false)]
+    [InlineData("Marisol Vega - Other Coast - Wordone 2021", false)]
+    public void WholeTitleWithSeriesLabelTailMatchesTheMainTitle(string release, bool expected) =>
+        Assert.Equal(expected, Match(Possessive("Wordone: Gardener's Season 2, Book 1", null), release).IsConfirmed);
+
+    [Theory]
+    [InlineData("Wordone: A Gentle Descriptive Subtitle")]
+    [InlineData("Wordone: Season 2")]
+    [InlineData("Wordone: Gardeners")]
+    public void WholeTitleWithOtherTailsStillRequiresTheFullTitle(string title) =>
+        Assert.False(Match(Possessive(title, null), "Marisol Vega - Gardeners - Wordone 2021").IsConfirmed);
 }
