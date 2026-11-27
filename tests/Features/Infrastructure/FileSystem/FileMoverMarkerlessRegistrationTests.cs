@@ -2262,6 +2262,132 @@ public sealed class FileMoverMarkerlessRegistrationTests : BaseTests
             FileMutationJournalState.NeedsAttention, audiobookId: 79);
     }
 
+    [Fact]
+    public async Task PrepareMove_CreatedTargetRemovedBeforeRetry_RepublishesFromIntactSource()
+    {
+        var scenario = await CreateScenarioAsync("registration-created-target-removed");
+        var firstMover = CreateMover(afterRegistrationTargetState: () =>
+            throw new IOException("Injected interruption after target state persistence."));
+        await Assert.ThrowsAsync<IOException>(() => firstMover.PrepareActionForRegistrationAsync(
+            FileAction.Move, scenario.Source, scenario.Destination, scenario.OperationId));
+        await AssertJournalStateAsync(scenario.OperationId,
+            FileMutationJournalState.TargetIdentityPersisted, audiobookId: null);
+        File.Delete(scenario.Destination);
+
+        var retryMover = CreateMover();
+        using var lease = await retryMover.PrepareActionForRegistrationAsync(
+            FileAction.Move, scenario.Source, scenario.Destination, scenario.OperationId);
+
+        Assert.NotNull(lease);
+        Assert.True(lease.PrepareCleanupRecovery(80));
+        Assert.Equal(RegistrationPublicationCompletion.Completed, lease.CompletePublication());
+        Assert.True(await retryMover.CompletePreparedMoveAsync(
+            scenario.Source, scenario.Destination, lease, scenario.OperationId));
+        Assert.Equal("audio", await File.ReadAllTextAsync(scenario.Source));
+        Assert.Equal("audio", await File.ReadAllTextAsync(scenario.Destination));
+        await AssertJournalStateAsync(scenario.OperationId,
+            FileMutationJournalState.CompletedSourceRetained, audiobookId: 80);
+        AssertNoLibraryArtifacts(scenario.Root);
+    }
+
+    [Fact]
+    public async Task PrepareMove_CreatedTargetRemovedAndSourceChanged_ParksJournal()
+    {
+        var scenario = await CreateScenarioAsync("registration-created-target-source-changed");
+        var firstMover = CreateMover(afterRegistrationTargetState: () =>
+            throw new IOException("Injected interruption after target state persistence."));
+        await Assert.ThrowsAsync<IOException>(() => firstMover.PrepareActionForRegistrationAsync(
+            FileAction.Move, scenario.Source, scenario.Destination, scenario.OperationId));
+        File.Delete(scenario.Destination);
+        await File.WriteAllTextAsync(scenario.Source, "edited");
+
+        using var lease = await CreateMover().PrepareActionForRegistrationAsync(
+            FileAction.Move, scenario.Source, scenario.Destination, scenario.OperationId);
+
+        Assert.Null(lease);
+        await AssertJournalStateAsync(scenario.OperationId,
+            FileMutationJournalState.NeedsAttention, audiobookId: null);
+        Assert.False(File.Exists(scenario.Destination));
+        Assert.Equal("edited", await File.ReadAllTextAsync(scenario.Source));
+    }
+
+    [Fact]
+    public async Task PrepareMove_PartialTargetPresentBeforeRetry_StillParksJournal()
+    {
+        var scenario = await CreateScenarioAsync("registration-partial-target-present");
+        var firstMover = CreateMover(afterRegistrationTargetState: () =>
+            throw new IOException("Injected interruption after target state persistence."));
+        await Assert.ThrowsAsync<IOException>(() => firstMover.PrepareActionForRegistrationAsync(
+            FileAction.Move, scenario.Source, scenario.Destination, scenario.OperationId));
+        await File.WriteAllTextAsync(scenario.Destination, "au");
+
+        using var lease = await CreateMover().PrepareActionForRegistrationAsync(
+            FileAction.Move, scenario.Source, scenario.Destination, scenario.OperationId);
+
+        Assert.Null(lease);
+        await AssertJournalStateAsync(scenario.OperationId,
+            FileMutationJournalState.NeedsAttention, audiobookId: null);
+        Assert.Equal("au", await File.ReadAllTextAsync(scenario.Destination));
+    }
+
+    [Fact]
+    public async Task PrepareMove_VerifiedRetryWithAudiobookIdOnlyAndRemovedTarget_ParksJournal()
+    {
+        var scenario = await CreateInterruptedVerifiedMoveAsync("registration-verified-audiobook-owner");
+        var factory = _provider.GetRequiredService<
+            IDbContextFactory<ListenArrDbContext>>();
+        await using (var db = await factory.CreateDbContextAsync())
+        {
+            var journal = await db.FileMutationJournals.SingleAsync(
+                candidate => candidate.OperationId == scenario.OperationId);
+            journal.AudiobookId = 77;
+            await db.SaveChangesAsync();
+        }
+        File.Delete(scenario.Destination);
+
+        using var lease = await CreateMover().PrepareActionForRegistrationAsync(
+            FileAction.Move, scenario.Source, scenario.Destination, scenario.OperationId);
+
+        Assert.Null(lease);
+        await AssertJournalStateAsync(scenario.OperationId,
+            FileMutationJournalState.NeedsAttention, audiobookId: 77);
+        Assert.False(File.Exists(scenario.Destination));
+    }
+
+    [Fact]
+    public async Task PrepareCompanionMove_VerifiedRetryWithRemovedTarget_ParksJournal()
+    {
+        var scenario = await CreateScenarioAsync("registration-companion-target-removed");
+        var mover = CreateMover(forceCrossVolume: true);
+        var sourceCapability = await ((IFilePublicationSourceCapability)mover)
+            .CheckAsync(scenario.Source);
+        Assert.True(sourceCapability.IsSupported, sourceCapability.Reason);
+        Task<FilePublicationPreparationResult> Prepare(FileMover candidate) =>
+            candidate.PrepareActionForRegistrationDetailedAsync(
+                FilePublicationPlan.Durable(FileAction.Move),
+                scenario.Source,
+                scenario.Destination,
+                scenario.OperationId,
+                expectedRegisteredPhysicalObjectIdentity: null,
+                sourceCapability.SourceProof!.Value,
+                isCompanionFile: true,
+                companionAudiobookId: 73);
+        using (var first = (await Prepare(mover)).RegistrationLease)
+        {
+            Assert.NotNull(first);
+        }
+        await AssertJournalStateAsync(scenario.OperationId,
+            FileMutationJournalState.TargetVerified, audiobookId: 73);
+        File.Delete(scenario.Destination);
+
+        var retry = await Prepare(CreateMover(forceCrossVolume: true));
+
+        Assert.Null(retry.RegistrationLease);
+        await AssertJournalStateAsync(scenario.OperationId,
+            FileMutationJournalState.NeedsAttention, audiobookId: 73);
+        Assert.False(File.Exists(scenario.Destination));
+    }
+
     private async Task<Scenario> CreateInterruptedVerifiedMoveAsync(string name)
     {
         var scenario = await CreateScenarioAsync(name);

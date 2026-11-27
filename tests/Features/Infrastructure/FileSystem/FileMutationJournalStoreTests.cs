@@ -539,7 +539,7 @@ public sealed class FileMutationJournalStoreTests : BaseTests
     }
 
     [Fact]
-    public async Task ReplanUnownedVerifiedAsync_UnownedVerifiedJournal_ReturnsToPlanned()
+    public async Task ReplanUnownedPublicationAsync_UnownedVerifiedJournal_ReturnsToPlanned()
     {
         var operationId = Guid.NewGuid();
         var store = CreateStore();
@@ -547,7 +547,7 @@ public sealed class FileMutationJournalStoreTests : BaseTests
         await store.AdvanceAsync(operationId, FileMutationJournalState.TargetVerified,
             "target-generation", null, null, CancellationToken.None);
 
-        var replanned = await store.ReplanUnownedVerifiedAsync(
+        var replanned = await store.ReplanUnownedPublicationAsync(
             operationId, CancellationToken.None);
 
         Assert.Equal(FileMutationJournalState.Planned, replanned.State);
@@ -556,23 +556,41 @@ public sealed class FileMutationJournalStoreTests : BaseTests
             (await store.GetAsync(operationId, CancellationToken.None))!.State);
     }
 
+    [Fact]
+    public async Task ReplanUnownedPublicationAsync_UnownedCreatedJournal_ReturnsToPlanned()
+    {
+        var operationId = Guid.NewGuid();
+        var store = CreateStore();
+        await store.GetOrCreateAsync(CreateClaim(operationId), CancellationToken.None);
+        await store.AdvanceAsync(operationId, FileMutationJournalState.TargetIdentityPersisted,
+            null, null, null, CancellationToken.None);
+
+        var replanned = await store.ReplanUnownedPublicationAsync(
+            operationId, CancellationToken.None);
+
+        Assert.Equal(FileMutationJournalState.Planned, replanned.State);
+    }
+
     [Theory]
-    [InlineData(FileMutationJournalState.Planned, false)]
-    [InlineData(FileMutationJournalState.TargetIdentityPersisted, false)]
-    [InlineData(FileMutationJournalState.NeedsAttention, false)]
-    [InlineData(FileMutationJournalState.RegistrationCommitted, true)]
-    [InlineData(FileMutationJournalState.TargetVerified, true)]
-    public async Task ReplanUnownedVerifiedAsync_OtherStateOrOwnedJournal_IsRefused(
+    [InlineData(FileMutationJournalState.Planned, null, null)]
+    [InlineData(FileMutationJournalState.NeedsAttention, null, null)]
+    [InlineData(FileMutationJournalState.RegistrationCommitted, 5, 6)]
+    [InlineData(FileMutationJournalState.TargetVerified, 5, 6)]
+    [InlineData(FileMutationJournalState.TargetVerified, 5, null)]
+    [InlineData(FileMutationJournalState.TargetIdentityPersisted, 5, null)]
+    [InlineData(FileMutationJournalState.TargetIdentityPersisted, 5, 6)]
+    public async Task ReplanUnownedPublicationAsync_OtherStateOrOwnedJournal_IsRefused(
         FileMutationJournalState state,
-        bool owned)
+        int? audiobookId,
+        int? audiobookFileId)
     {
         var operationId = Guid.NewGuid();
         var store = CreateStore();
         await store.GetOrCreateAsync(
             CreateClaim(operationId) with
             {
-                AudiobookId = owned ? 5 : null,
-                AudiobookFileId = owned ? 6 : null
+                AudiobookId = audiobookId,
+                AudiobookFileId = audiobookFileId
             },
             CancellationToken.None);
         if (state != FileMutationJournalState.Planned)
@@ -583,9 +601,76 @@ public sealed class FileMutationJournalStoreTests : BaseTests
         }
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            store.ReplanUnownedVerifiedAsync(operationId, CancellationToken.None));
+            store.ReplanUnownedPublicationAsync(operationId, CancellationToken.None));
         Assert.Equal(state,
             (await store.GetAsync(operationId, CancellationToken.None))!.State);
+    }
+
+    [Theory]
+    [InlineData(FileMutationJournalState.TargetVerified)]
+    [InlineData(FileMutationJournalState.TargetIdentityPersisted)]
+    public async Task ReplanUnownedPublicationAsync_Sqlite_UnownedJournalReturnsToPlanned(
+        FileMutationJournalState state)
+    {
+        var (store, operationId) = await CreateSqliteJournalAsync(state, null, null);
+
+        var replanned = await store.ReplanUnownedPublicationAsync(
+            operationId, CancellationToken.None);
+
+        Assert.Equal(FileMutationJournalState.Planned, replanned.State);
+        Assert.Null(replanned.TargetPhysicalObjectIdentity);
+        Assert.Equal(FileMutationJournalState.Planned,
+            (await store.GetAsync(operationId, CancellationToken.None))!.State);
+    }
+
+    [Theory]
+    [InlineData(FileMutationJournalState.TargetVerified, 5, null)]
+    [InlineData(FileMutationJournalState.TargetIdentityPersisted, 5, null)]
+    [InlineData(FileMutationJournalState.TargetVerified, 5, 6)]
+    public async Task ReplanUnownedPublicationAsync_Sqlite_OwnedJournalIsRefused(
+        FileMutationJournalState state,
+        int? audiobookId,
+        int? audiobookFileId)
+    {
+        var (store, operationId) =
+            await CreateSqliteJournalAsync(state, audiobookId, audiobookFileId);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.ReplanUnownedPublicationAsync(operationId, CancellationToken.None));
+        Assert.Equal(state,
+            (await store.GetAsync(operationId, CancellationToken.None))!.State);
+    }
+
+    private async Task<(EfFileMutationJournalStore Store, Guid OperationId)>
+        CreateSqliteJournalAsync(
+            FileMutationJournalState state,
+            int? audiobookId,
+            int? audiobookFileId)
+    {
+        var databasePath = Path.Join(
+            FileService.GetTempPath(),
+            $"file-mutation-replan-{Guid.NewGuid():N}.db");
+        var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+            .UseSqlite($"Data Source={databasePath};Pooling=False")
+            .Options;
+        var factory = new TestDbContextFactory(options);
+        await using (var db = await factory.CreateDbContextAsync())
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var operationId = Guid.NewGuid();
+        var store = CreateStore(factory);
+        await store.GetOrCreateAsync(
+            CreateClaim(operationId) with
+            {
+                AudiobookId = audiobookId,
+                AudiobookFileId = audiobookFileId
+            },
+            CancellationToken.None);
+        await store.AdvanceAsync(operationId, state, null, null, null,
+            CancellationToken.None);
+        return (store, operationId);
     }
 
     private EfFileMutationJournalStore CreateStore() =>
