@@ -2537,13 +2537,9 @@ async function handleEditSaved() {
   }
 }
 
-// In "Broken books", Select All takes only the broken books shown, so Repair and Delete
-// can't reach healthy books hidden by the group
+// Select All takes only the books shown (after search, filters and group), so Edit, Organize,
+// Repair and Delete Selected can't reach the books those hide
 function selectAllBooks() {
-  if (!brokenOnly.value) {
-    libraryStore.selectAll()
-    return
-  }
   libraryStore.clearSelection()
   for (const book of audiobooks.value) libraryStore.toggleSelection(book.id)
 }

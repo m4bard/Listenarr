@@ -298,10 +298,6 @@ export const useLibraryStore = defineStore('library', () => {
     }
   }
 
-  function selectAll() {
-    audiobooks.value.forEach((book) => selectedIds.value.add(book.id))
-  }
-
   function clearSelection() {
     selectedIds.value.clear()
   }
@@ -319,7 +315,6 @@ export const useLibraryStore = defineStore('library', () => {
     removeFromLibrary,
     bulkRemoveFromLibrary,
     toggleSelection,
-    selectAll,
     clearSelection,
     isSelected,
   }
