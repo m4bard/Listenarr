@@ -17,6 +17,7 @@
  */
 
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 
 namespace Listenarr.Domain.Audiobooks
 {
@@ -99,7 +100,7 @@ namespace Listenarr.Domain.Audiobooks
                 // Prefer audiobook's publish year when available
                 Year = int.TryParse(PublishYear, out var py) ? py : (int?)null,
                 // Series position / number
-                SeriesPosition = !string.IsNullOrWhiteSpace(SeriesNumber) && decimal.TryParse(SeriesNumber, out var sp) ? sp : (decimal?)null,
+                SeriesPosition = !string.IsNullOrWhiteSpace(SeriesNumber) && decimal.TryParse(SeriesNumber, NumberStyles.Number, CultureInfo.InvariantCulture, out var sp) ? sp : (decimal?)null,
                 // Quality string from audiobook record
                 // Map into Bitrate/Format heuristically if useful; for now store textual quality
                 // We'll put it into AdditionalData so FileNamingService can use Format/Bitrate/Quality

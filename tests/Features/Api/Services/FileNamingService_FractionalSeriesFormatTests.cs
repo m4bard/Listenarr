@@ -146,5 +146,42 @@ namespace Listenarr.Tests.Features.Api.Services
                 CultureInfo.CurrentCulture = previous;
             }
         }
+
+        [Fact]
+        public void IntegerPaths_FormatWithInvariantCulture()
+        {
+            var previous = CultureInfo.CurrentCulture;
+            try
+            {
+                CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+
+                const string expected = "1,234";
+                Assert.Equal("1.234", 1234.ToString("N0"));
+                Assert.Equal(expected, Render("{SeriesNumber:N0}", 1234));
+                Assert.Equal(expected, Render("{SeriesNumber:N0}", "1234"));
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = previous;
+            }
+        }
+
+        [Fact]
+        public void FractionalSeriesPosition_UnderGermanCulture_RendersTheIssueExample()
+        {
+            var previous = CultureInfo.CurrentCulture;
+            try
+            {
+                CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+
+                Assert.Equal("Series [#1.5] - Title", _service.ApplyNamingPattern(
+                    "{Series} [{SeriesNumber:'#'0.##}] - {Title}",
+                    new Dictionary<string, object> { { "Series", "Series" }, { "SeriesNumber", "1.5" }, { "Title", "Title" } }));
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = previous;
+            }
+        }
     }
 }

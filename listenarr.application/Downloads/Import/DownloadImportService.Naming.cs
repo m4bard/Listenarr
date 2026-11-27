@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Listenarr.Application.Downloads.Import;
 
 public partial class DownloadImportService
@@ -51,7 +53,7 @@ public partial class DownloadImportService
                     audiobook.Series,
                     extractedMetadata?.Series),
                 SeriesPosition = !string.IsNullOrWhiteSpace(audiobook.SeriesNumber)
-                    && decimal.TryParse(audiobook.SeriesNumber, out var seriesPosition)
+                    && decimal.TryParse(audiobook.SeriesNumber, NumberStyles.Number, CultureInfo.InvariantCulture, out var seriesPosition)
                         ? seriesPosition
                         : extractedMetadata?.SeriesPosition,
                 Year = !string.IsNullOrWhiteSpace(audiobook.PublishYear)

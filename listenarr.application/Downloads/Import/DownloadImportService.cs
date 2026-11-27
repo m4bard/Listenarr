@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using System.Globalization;
 using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 namespace Listenarr.Application.Downloads.Import
@@ -308,7 +309,7 @@ namespace Listenarr.Application.Downloads.Import
                                 { "Publisher", string.IsNullOrWhiteSpace(namingMetadata.Publisher) ? string.Empty : namingMetadata.Publisher },
                                 { "Language", string.IsNullOrWhiteSpace(namingMetadata.Language) ? string.Empty : namingMetadata.Language },
                                 { "Asin", string.IsNullOrWhiteSpace(namingMetadata.Asin) ? string.Empty : namingMetadata.Asin },
-                                { "SeriesNumber", namingMetadata.SeriesPosition?.ToString() ?? effectiveChapterNumber?.ToString() ?? string.Empty },
+                                { "SeriesNumber", namingMetadata.SeriesPosition?.ToString(CultureInfo.InvariantCulture) ?? effectiveChapterNumber?.ToString(CultureInfo.InvariantCulture) ?? string.Empty },
                                 { "Year", namingMetadata.Year?.ToString() ?? string.Empty },
                                 { "Quality", (namingMetadata.BitRate.HasValue ? $"{namingMetadata.BitRate}kbps" : null) ?? namingMetadata.Format ?? string.Empty },
                                 { "DiskNumber", effectiveDiskNumber?.ToString() ?? string.Empty },
