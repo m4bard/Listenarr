@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
@@ -193,6 +194,32 @@ namespace Listenarr.Application.Common
         private static FileSystemPathSyntax GetNativePathSyntax() =>
             OperatingSystem.IsWindows() ? FileSystemPathSyntax.Windows : FileSystemPathSyntax.Unix;
 
+        /// <summary>
+        /// Applies a numeric format to a fractional position such as 1.5. Text that is not a plain
+        /// invariant decimal (1-4, 1,5) stays as written, and so does a fraction the format would
+        /// round away (1.5 under 00 would become 02, the next book's number).
+        /// </summary>
+        private static string FormatFraction(string text, string format)
+        {
+            if (!decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var number))
+            {
+                return text;
+            }
+
+            try
+            {
+                var formatted = number.ToString(format, CultureInfo.InvariantCulture);
+                var losesFraction = number != decimal.Truncate(number)
+                    && (formatted == decimal.Floor(number).ToString(format, CultureInfo.InvariantCulture)
+                        || formatted == decimal.Ceiling(number).ToString(format, CultureInfo.InvariantCulture));
+                return losesFraction ? text : formatted;
+            }
+            catch (FormatException)
+            {
+                return text;
+            }
+        }
+
         public string ApplyNamingPattern(string pattern, Dictionary<string, object> variables, bool treatAsFilename = false)
         {
             if (string.IsNullOrWhiteSpace(pattern))
@@ -227,17 +254,18 @@ namespace Listenarr.Application.Common
                     if (!string.IsNullOrEmpty(format))
                     {
                         // For numeric values with format (e.g., {DiskNumber:00})
+                        var text = Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
                         if (value is int intValue)
                         {
-                            renderedValue = intValue.ToString(format);
+                            renderedValue = intValue.ToString(format, CultureInfo.InvariantCulture);
                         }
-                        else if (int.TryParse(value.ToString(), out var parsedInt))
+                        else if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedInt))
                         {
-                            renderedValue = parsedInt.ToString(format);
+                            renderedValue = parsedInt.ToString(format, CultureInfo.InvariantCulture);
                         }
                         else
                         {
-                            renderedValue = value.ToString() ?? string.Empty;
+                            renderedValue = FormatFraction(text, format);
                         }
                     }
                     else
