@@ -22,6 +22,7 @@ import type { SearchResult } from '@/types'
 const startManualImport = vi.fn()
 const addToLibrary = vi.fn()
 const updateAudiobook = vi.fn()
+const removeFromLibrary = vi.fn()
 const advancedSearch = vi.fn()
 const scanUnmatchedFiles = vi.fn()
 const getUnmatchedResults = vi.fn()
@@ -36,6 +37,7 @@ vi.mock('@/services/api', () => ({
   apiService: {
     addToLibrary,
     updateAudiobook,
+    removeFromLibrary,
     startManualImport,
     advancedSearch,
     getAudibleMetadata,
@@ -70,6 +72,7 @@ describe('library import store', () => {
     setActivePinia(createPinia())
     addToLibrary.mockResolvedValue({ audiobook: { id: 42 } })
     updateAudiobook.mockResolvedValue({})
+    removeFromLibrary.mockResolvedValue({ message: 'ok', id: 42 })
     startManualImport.mockResolvedValue({ importedCount: 3, totalCount: 3, results: [] })
     advancedSearch.mockResolvedValue([])
     getSavedUnmatchedFiles.mockResolvedValue({ items: [], lastScannedAt: null })

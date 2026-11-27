@@ -82,6 +82,21 @@ function pickBestMatch(results: SearchResult[], detectedAuthor?: string): Search
 // be imported without it, the user picks the match (and its region) again
 class MatchRecordNotFoundError extends Error {}
 
+// The API's wording when a book's destination folder already belongs to another library entry.
+const OWNED_DESTINATION_MESSAGE = /already assigned to another audiobook/i
+
+const REJECTED_REQUEST_STATUSES = [400, 404, 409]
+
+async function removeCreatedEntry(audiobookId: number): Promise<boolean> {
+  try {
+    await apiService.removeFromLibrary(audiobookId, { deleteFiles: false, deleteFolder: false })
+    return true
+  } catch (e) {
+    logger.debug('[libraryImport] Could not remove the entry created for a failed import:', e)
+    return false
+  }
+}
+
 function normalizeGenres(genres: unknown): string[] | undefined {
   if (!Array.isArray(genres)) return genres as string[] | undefined
   return genres
@@ -591,6 +606,8 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
 
     for (const item of toImport) {
       const match = item.selectedMatch!
+      // Set only when this step created the entry, so a rollback never touches an existing one.
+      let createdAudiobookId: number | null = null
       try {
         let audiobookId: number
         try {
@@ -609,11 +626,20 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
             searchResult: sanitizedMatch,
           })
           audiobookId = audiobook.id
+          createdAudiobookId = audiobook.id
         } catch (e: unknown) {
           // 409 = book already in library, extract existing audiobook from response body
           const err = e as { status?: number; body?: unknown }
           const profileError = getApiValidationError(e, 'qualityProfileId')
           if (profileError) throw new Error(profileError.message)
+          const blockedError = getApiValidationError(e)
+          if (blockedError?.code === 'destination_path_blocked') {
+            throw new Error(
+              action.value === 'none' && OWNED_DESTINATION_MESSAGE.test(blockedError.message)
+                ? 'This folder already belongs to another book in the library. Leaving files in place needs one book per folder, so give each book its own folder.'
+                : blockedError.message,
+            )
+          }
           if (err?.status === 409 && err?.body) {
             const body = typeof err.body === 'string' ? JSON.parse(err.body) : err.body
             if (body?.audiobook?.id) {
@@ -635,23 +661,48 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
             throw e
           }
         }
-        const importResult = await apiService.startManualImport({
-          path: item.folderPath,
-          mode: 'interactive',
-          action: action.value,
-          includeCompanionFiles: action.value !== 'none',
-          cleanupEmptySourceFolders: action.value === 'move',
-          items: item.sourceFiles.map((fullPath) => ({
-            fullPath,
-            matchedAudiobookId: audiobookId,
-          })),
-        })
+        let importResult: Awaited<ReturnType<typeof apiService.startManualImport>>
+        try {
+          importResult = await apiService.startManualImport({
+            path: item.folderPath,
+            mode: 'interactive',
+            action: action.value,
+            includeCompanionFiles: action.value !== 'none',
+            cleanupEmptySourceFolders: action.value === 'move',
+            items: item.sourceFiles.map((fullPath) => ({
+              fullPath,
+              matchedAudiobookId: audiobookId,
+            })),
+          })
+        } catch (e) {
+          // A request the API rejected (for example a vanished source folder) imported
+          // nothing. Server errors and network failures leave the outcome unknown, so the
+          // entry stays.
+          const status = (e as { status?: number })?.status
+          if (
+            createdAudiobookId !== null &&
+            REJECTED_REQUEST_STATUSES.includes(status ?? 0) &&
+            !(await removeCreatedEntry(createdAudiobookId))
+          ) {
+            throw new Error(
+              `${(e as Error)?.message ?? 'Import failed'} (the new library entry could not be removed)`,
+            )
+          }
+          throw e
+        }
         const failedResult = importResult.results?.find((result) => !result.success)
         if (failedResult || importResult.importedCount !== item.sourceFiles.length) {
+          // A new entry that received no file would otherwise stay behind as a monitored,
+          // file-less Wanted entry. Partial imports keep it: it now owns files.
+          const rollbackFailed =
+            createdAudiobookId !== null &&
+            importResult.importedCount === 0 &&
+            !(await removeCreatedEntry(createdAudiobookId))
           const reason = failedResult?.error ?? failedResult?.skipReason
           throw new Error(
-            reason ??
-              `Only ${importResult.importedCount} of ${item.sourceFiles.length} file(s) were imported`,
+            (reason ??
+              `Only ${importResult.importedCount} of ${item.sourceFiles.length} file(s) were imported`) +
+              (rollbackFailed ? ' (the new library entry could not be removed)' : ''),
           )
         }
 
