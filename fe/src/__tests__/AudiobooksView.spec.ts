@@ -33,6 +33,13 @@ const { mockGetAudiobookDeleteCapabilities } = vi.hoisted(() => ({
   })),
 }))
 
+const { mockShowConfirm } = vi.hoisted(() => ({ mockShowConfirm: vi.fn(async () => true) }))
+
+vi.mock('@/composables/useConfirm', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/composables/useConfirm')>()),
+  showConfirm: mockShowConfirm,
+}))
+
 vi.mock('@/services/api', () => ({
   apiService: {
     getQualityProfiles: vi.fn(async () => []),
@@ -1129,6 +1136,79 @@ describe('AudiobooksView Grouping', () => {
       await clickSelectAll(wrapper)
 
       expect([...useLibraryStore().selectedIds].sort()).toEqual([1, 2, 3, 4])
+    })
+
+    describe('Select All follows the books shown', () => {
+      const library = [
+        { id: 1, title: 'Alpha one', brokenReasons: [], monitored: true },
+        { id: 2, title: 'Alpha two', brokenReasons: [], monitored: false },
+        { id: 3, title: 'Beta three', brokenReasons: [], monitored: false },
+        { id: 4, title: 'Beta four', brokenReasons: [], monitored: true },
+      ]
+
+      beforeEach(() => {
+        localStorage.removeItem('listenarr.searchQuery')
+        mockShowConfirm.mockClear()
+      })
+
+      afterEach(() => {
+        localStorage.removeItem('listenarr.searchQuery')
+      })
+
+      it('selects only the books matching the search', async () => {
+        localStorage.setItem('listenarr.searchQuery', 'alpha')
+        const { wrapper } = await mountLibrary(library)
+        expect(shownIds(wrapper)).toEqual([1, 2])
+
+        await clickSelectAll(wrapper)
+
+        expect([...useLibraryStore().selectedIds].sort()).toEqual([1, 2])
+      })
+
+      it('selects only the books matching the active filter', async () => {
+        const { wrapper } = await mountLibrary(library)
+        getVm(wrapper).selectedFilterId = 'unmonitored'
+        await wrapper.vm.$nextTick()
+        expect(shownIds(wrapper)).toEqual([2, 3])
+
+        await clickSelectAll(wrapper)
+
+        expect([...useLibraryStore().selectedIds].sort()).toEqual([2, 3])
+      })
+
+      it('selects only the filtered books in the Authors group', async () => {
+        const { wrapper } = await mountLibrary(library)
+        getVm(wrapper).selectedFilterId = 'monitored'
+        await getVm(wrapper).setGroupBy?.('authors')
+        await wrapper.vm.$nextTick()
+        expect(shownIds(wrapper)).toEqual([1, 4])
+
+        await clickSelectAll(wrapper)
+
+        expect([...useLibraryStore().selectedIds].sort()).toEqual([1, 4])
+      })
+
+      it('deletes only the filtered books after Select All', async () => {
+        const { wrapper } = await mountLibrary(library)
+        const store = useLibraryStore()
+        store.bulkRemoveFromLibrary = vi.fn(async () => ({ success: true, deletedCount: 2 }))
+        getVm(wrapper).selectedFilterId = 'unmonitored'
+        await wrapper.vm.$nextTick()
+        expect(shownIds(wrapper)).toEqual([2, 3])
+
+        await clickSelectAll(wrapper)
+        const deleteButton = wrapper
+          .findAll('button.toolbar-btn')
+          .find((b) => b.text().startsWith('Delete Selected'))
+        expect(deleteButton!.text()).toContain('Delete Selected (2)')
+        await deleteButton!.trigger('click')
+        await flushPromises()
+
+        expect(store.bulkRemoveFromLibrary).toHaveBeenCalledTimes(1)
+        expect(
+          [...(vi.mocked(store.bulkRemoveFromLibrary).mock.calls[0]![0] as number[])].sort(),
+        ).toEqual([2, 3])
+      })
     })
 
     it('says when no book is broken, keeps the group menu and offers all books', async () => {
