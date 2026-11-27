@@ -74,6 +74,20 @@ namespace Listenarr.Infrastructure.Images.Cache
                 _logger.LogWarning("Cannot cache image: URL or identifier is empty");
                 return null;
             }
+            if (AppImagePath.IsAppImagePath(imageUrl))
+            {
+                // Listenarr's own image path is not a download source; serve the cached copy if there is one.
+                var ownPath = _storageLookup.FindAnyCachedPath(identifier);
+                if (string.IsNullOrEmpty(ownPath))
+                {
+                    _logger.LogDebug("No cached image for {Identifier}; its URL is Listenarr's own image path", LogRedaction.SanitizeText(identifier));
+                    return null;
+                }
+
+                _logger.LogInformation("Image already cached: {Identifier}", LogRedaction.SanitizeText(identifier));
+                return GetRelativePath(ownPath);
+            }
+
             if (!ImageDownloadValidator.TryValidateExternalImageUrl(imageUrl, out var validationReason))
             {
                 _logger.LogWarning("Blocked image download URL for {Identifier}: {Reason}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(validationReason));
