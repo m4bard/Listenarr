@@ -135,7 +135,8 @@ public sealed class FileRegistrationOperatorReviewTests : BaseTests
     [InlineData(false)]
     public async Task Resolution_RejectsChangedFileOrOwnership(bool changeFile)
     {
-        var (factory, service, id, _, target) = await SeedAsync();
+        var logger = new CapturingLogger<FileRegistrationRecoveryService>();
+        var (factory, service, id, _, target) = await SeedAsync(logger);
         var review = await service.InspectAsync(id);
         if (changeFile) await File.WriteAllTextAsync(target, "replaced file");
         else
@@ -147,6 +148,7 @@ public sealed class FileRegistrationOperatorReviewTests : BaseTests
             service.ResolveAsync(id, review.ReviewToken, "reviewed", true, "tester"));
         await using var verify = factory.CreateDbContext();
         Assert.Equal(FileMutationJournalState.NeedsAttention, (await verify.FileMutationJournals.SingleAsync()).State);
+        Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Warning);
     }
 
     [Fact]
