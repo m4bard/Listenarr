@@ -138,7 +138,7 @@ public sealed class FileRegistrationOperatorResolveRefusalTests : BaseTests
         Assert.Equal(Note, row.ResolutionNote);
     }
 
-    public enum Race { StateChanged, FileIdAssigned, UpdatedAtBumped, AudiobookReassigned, ErrorChanged }
+    public enum Race { StateChanged, FileIdAssigned, UpdatedAtBumped, AudiobookReassigned, ErrorChanged, SourceHashChanged }
 
     [Theory]
     [InlineData(Race.StateChanged)]
@@ -146,6 +146,7 @@ public sealed class FileRegistrationOperatorResolveRefusalTests : BaseTests
     [InlineData(Race.UpdatedAtBumped)]
     [InlineData(Race.AudiobookReassigned)]
     [InlineData(Race.ErrorChanged)]
+    [InlineData(Race.SourceHashChanged)]
     public async Task Resolve_RowChangedBetweenInspectionAndWrite_IsRefusedAndDoesNotOverwrite(Race race)
     {
         var root = FileService.GetTempDirectory("refuse-race");
@@ -185,7 +186,8 @@ public sealed class FileRegistrationOperatorResolveRefusalTests : BaseTests
                 Race.FileIdAssigned => rows.ExecuteUpdateAsync(s => s.SetProperty(j => j.AudiobookFileId, 7), token),
                 Race.UpdatedAtBumped => rows.ExecuteUpdateAsync(s => s.SetProperty(j => j.UpdatedAt, DateTime.UtcNow), token),
                 Race.AudiobookReassigned => rows.ExecuteUpdateAsync(s => s.SetProperty(j => j.AudiobookId, 999), token),
-                _ => rows.ExecuteUpdateAsync(s => s.SetProperty(j => j.Error, "Changed by another writer"), token)
+                Race.ErrorChanged => rows.ExecuteUpdateAsync(s => s.SetProperty(j => j.Error, "Changed by another writer"), token),
+                _ => rows.ExecuteUpdateAsync(s => s.SetProperty(j => j.SourceSha256, new string('0', 64)), token)
             };
         };
 
