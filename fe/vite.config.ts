@@ -22,6 +22,8 @@ export default defineConfig(({ mode }): UserConfig => {
     // path base a request arrived under and every relative URL resolves against it. Vite
     // substitutes '/' for a relative base on the dev server, so development is unaffected.
     base: './',
+    // Parallel E2E shards get separate caches so dependency optimization cannot race.
+    cacheDir: process.env.LISTENARR_E2E_VITE_CACHE_DIR,
     plugins: [
       vue(),
       ...(analyzeBundle

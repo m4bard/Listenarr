@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { createServer as createTcpServer } from 'node:net'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { DatabaseSync } from 'node:sqlite'
 
 export const repositoryRoot = resolve(fileURLToPath(new URL('../..', import.meta.url)))
@@ -46,6 +46,40 @@ export async function waitForExit(child, label) {
   const [code] = await once(child, 'close')
   if (child.spawnError) throw child.spawnError
   if (code !== 0) throw new Error(`${label} exited with code ${code}`)
+}
+
+/** Whether a tagged image is present in the local Docker daemon. */
+export function imageExists(tag) {
+  try {
+    execFileSync('docker', ['image', 'inspect', tag], { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Builds both images once, unless both are already present under a reusable (content-derived) tag.
+ * Returns true when a build was necessary.
+ */
+export async function ensureImages({ appImage, hostImage, reuse = false }) {
+  if (reuse && imageExists(appImage) && imageExists(hostImage)) return false
+  const run = async (args, label) => {
+    const child = start('docker', args, { cwd: repositoryRoot })
+    await waitForExit(child, label)
+  }
+  await run(['build', '--tag', appImage, repositoryRoot], 'Listenarr Docker image build')
+  await run(
+    ['build', '--tag', hostImage, '--build-arg', `LISTENARR_IMAGE=${appImage}`, '--file', hostDockerfile, repositoryRoot],
+    'Listenarr test host Docker image build',
+  )
+  return true
+}
+
+/** Removes run-specific images; reusable tagged images are kept for the next run. */
+export async function removeImages(appImage, hostImage) {
+  const child = start('docker', ['rmi', '--force', hostImage, appImage], { cwd: repositoryRoot })
+  await waitForExit(child, 'Listenarr image cleanup')
 }
 
 /** A hash of every row of every table: equal hashes mean an unchanged database. */
@@ -140,15 +174,18 @@ async function seedLibrary(apiUrl, seedFile, rootFolders) {
 }
 
 /**
- * Builds the images, starts the container and seeds it.
+ * Starts the container from images the caller built (ensureImages) and seeds it.
  *
- * - `name`: prefix of the container, image and temporary directory names.
+ * - `name`: prefix of the container and temporary directory names.
  * - `generateFixtures(seedFilesystemDirectory)`: writes the files the container sees under /e2e.
  * - `seedFile`: JSON array of books added to the library.
  * - `rootFolders`: root folders created after the books ({ name, path, isDefault? }).
  * - `environment`: extra container environment variables.
  * - `volumes`: extra `host:container` volume mounts.
  * - `dockerRunArguments`: extra `docker run` options.
+ * - `appImage` / `hostImage`: image tags shared by all stacks of one run; the caller builds them, and
+ *   removes them when they are run-specific.
+ * - `apiPort`: host port, so parallel stacks get distinct ports chosen up front.
  *
  * Returns the stack: its URL and directories, `run(args, label)` for docker commands, `restart()`
  * (stop then start, waiting for readiness) and `dispose()`, which removes everything.
@@ -161,6 +198,9 @@ export async function startListenarrStack({
   environment = {},
   volumes = [],
   dockerRunArguments = [],
+  appImage,
+  hostImage,
+  apiPort,
 }) {
   const contentRoot = await mkdtemp(join(tmpdir(), `${name}-`))
   const configDirectory = join(contentRoot, 'config')
@@ -170,9 +210,6 @@ export async function startListenarrStack({
   const databasePath = join(configDirectory, 'database', 'listenarr.db')
   const runId = `${process.pid}-${Date.now().toString(36)}`
   const containerName = `${name}-${runId}`
-  const appImage = `${name}-app:${runId}`
-  const hostImage = `${name}-host:${runId}`
-  const apiPort = await availablePort()
   const apiUrl = `http://127.0.0.1:${apiPort}`
   const run = async (args, label) => {
     const child = start('docker', args, { cwd: repositoryRoot })
@@ -182,15 +219,10 @@ export async function startListenarrStack({
 
   const dispose = async () => {
     if (dockerStarted) {
-      for (const [args, label] of [
-        [['rm', '--force', '--volumes', containerName], 'container'],
-        [['rmi', '--force', hostImage, appImage], 'images'],
-      ]) {
-        try {
-          await run(args, `Listenarr ${label} cleanup`)
-        } catch (error) {
-          console.error(`Could not clean up the Listenarr ${label}: ${error.message}`)
-        }
+      try {
+        await run(['rm', '--force', '--volumes', containerName], 'Listenarr container cleanup')
+      } catch (error) {
+        console.error(`Could not clean up the Listenarr container: ${error.message}`)
       }
     }
     await rm(contentRoot, { recursive: true, force: true })
@@ -210,11 +242,6 @@ export async function startListenarrStack({
     await cp(seedFilesystemDirectory, filesystemDirectory, { recursive: true })
 
     dockerStarted = true
-    await run(['build', '--tag', appImage, repositoryRoot], 'Listenarr Docker image build')
-    await run(
-      ['build', '--tag', hostImage, '--build-arg', `LISTENARR_IMAGE=${appImage}`, '--file', hostDockerfile, repositoryRoot],
-      'Listenarr test host Docker image build',
-    )
     await run(
       [
         'run',

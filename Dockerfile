@@ -20,6 +20,18 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 # reporting a modified binary upstream by accident.
 ARG LISTENARR_VERSION=
 WORKDIR /src
+# Ensure Node.js is available in the build image so MSBuild targets that run
+# the frontend (npm/vite) can execute during `dotnet publish`.
+# Use the same Node.js major as CI and the Discord bot runtime. Install it before COPY . . so a
+# source-only change does not repeat the apt and NodeSource work.
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+	&& curl -fsSL https://deb.nodesource.com/setup_26.x | bash - \
+	&& apt-get install -y --no-install-recommends nodejs \
+	&& node --version \
+	&& npm --version \
+	&& apt-get clean \
+	&& rm -rf /var/lib/apt/lists/*
 COPY ["Directory.Build.props", "./"]
 COPY ["Directory.Packages.props", "./"]
 COPY ["listenarr.api/Listenarr.Api.csproj", "listenarr.api/"]
@@ -29,17 +41,6 @@ COPY ["listenarr.infrastructure/Listenarr.Infrastructure.csproj", "listenarr.inf
 RUN dotnet restore "listenarr.api/Listenarr.Api.csproj"
 COPY . .
 WORKDIR "/src/listenarr.api"
-# Ensure Node.js is available in the build image so MSBuild targets that run
-# the frontend (npm/vite) can execute during `dotnet publish`.
-# Use the same Node.js major as CI and the Discord bot runtime.
-RUN apt-get update \
-	&& apt-get install -y --no-install-recommends curl ca-certificates gnupg \
-	&& curl -fsSL https://deb.nodesource.com/setup_26.x | bash - \
-	&& apt-get install -y --no-install-recommends nodejs \
-	&& node --version \
-	&& npm --version \
-	&& apt-get clean \
-	&& rm -rf /var/lib/apt/lists/*
 RUN VERSION_ARG=$( [ -n "$LISTENARR_VERSION" ] && echo "/p:Version=$LISTENARR_VERSION" || echo "" ) \
 	&& dotnet build "Listenarr.Api.csproj" -c Release -o /app/build $VERSION_ARG \
 	&& dotnet publish "Listenarr.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false $VERSION_ARG
@@ -57,11 +58,18 @@ RUN chmod +x /usr/local/bin/gosu
 
 RUN sh /tmp/listenarr-runtime/create-listenarr-user.sh
 
-COPY --from=build /app/publish .
-
 # Install Node.js only for the Discord bot runtime. npm is used for the install
 # and then removed from the final filesystem; the bot only needs node.
+# The install runs in the bot's final directory from its package files alone, before the published
+# app is copied in: a source-only change invalidates the publish COPY below but leaves this (much
+# slower) install cached. The publish COPY then adds the bot's sources next to node_modules, which
+# stays in place, so nothing is copied twice.
+COPY ["tools/discord-bot/package.json", "tools/discord-bot/package-lock.json", "/app/tools/discord-bot/"]
 RUN sh /tmp/listenarr-runtime/install-discord-bot-runtime.sh
+
+COPY --from=build /app/publish .
+# The published app must still ship the bot the dependencies above were installed for.
+RUN test -f /app/tools/discord-bot/index.js && test -f /app/tools/discord-bot/package-lock.json
 
 RUN sh /tmp/listenarr-runtime/finalize-app.sh
 
