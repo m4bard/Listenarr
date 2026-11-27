@@ -21,9 +21,9 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
     [Trait("Category", "Infrastructure")]
     public sealed class AutomaticSearchProcessorImportLockTests : BaseTests
     {
-        private const string Title = "Artemis";
-        private const string Author = "Andy Weir";
-        private const string ReleaseTitle = "Andy Weir - Artemis - 2017 - M4B";
+        private const string Title = "A Princess of Mars";
+        private const string Author = "Edgar Rice Burroughs";
+        private const string ReleaseTitle = "Edgar Rice Burroughs - A Princess of Mars - 2012 - M4B";
 
         [Fact]
         public async Task RunCycleAsync_FileRegisteredWhileImportHoldsBook_DoesNotGrab()
@@ -129,7 +129,7 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
         private async Task AddCutoffMeetingFileAsync(Audiobook audiobook) =>
             await _audiobookFileRepository.AddAsync(new AudiobookFileBuilder()
                 .WithAudiobook(audiobook)
-                .WithPath(@"C:\books\artemis\book.m4b")
+                .WithPath(@"C:\books\princess-of-mars\book.m4b")
                 .WithFormat("m4b")
                 .WithCoded("aac")
                 .WithBitrate(256_000)
