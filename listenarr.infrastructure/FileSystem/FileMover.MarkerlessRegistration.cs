@@ -173,6 +173,11 @@ public partial class FileMover
                 }
             }
 
+            journal = await ReplanRemovedVerifiedTargetAsync(
+                gate,
+                journal,
+                cancellationToken);
+
             if (journal.State == FileMutationJournalState.Planned)
             {
                 journal = await PublishMarkerlessRegistrationTargetAsync(

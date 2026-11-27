@@ -36,6 +36,10 @@ internal interface IFileMutationJournalStore
 
     FileMutationJournal? Get(Guid operationId);
 
+    Task<FileMutationJournal> ReplanUnownedVerifiedAsync(
+        Guid operationId,
+        CancellationToken cancellationToken);
+
     Task<FileMutationJournal> AdvanceAsync(
         Guid operationId,
         FileMutationJournalState state,
