@@ -2183,6 +2183,100 @@ public sealed class FileMoverMarkerlessRegistrationTests : BaseTests
         Assert.Equal("audio", await File.ReadAllTextAsync(scenario.Source));
     }
 
+    [Fact]
+    public async Task PrepareMove_VerifiedRetryWithRemovedTarget_RepublishesFromIntactSource()
+    {
+        var scenario = await CreateInterruptedVerifiedMoveAsync("registration-verified-target-removed");
+        File.Delete(scenario.Destination);
+
+        var retryMover = CreateMover();
+        using var lease = await retryMover.PrepareActionForRegistrationAsync(
+            FileAction.Move, scenario.Source, scenario.Destination, scenario.OperationId);
+
+        Assert.NotNull(lease);
+        Assert.True(lease.PrepareCleanupRecovery(78));
+        Assert.Equal(RegistrationPublicationCompletion.Completed, lease.CompletePublication());
+        Assert.True(await retryMover.CompletePreparedMoveAsync(
+            scenario.Source, scenario.Destination, lease, scenario.OperationId));
+        Assert.Equal("audio", await File.ReadAllTextAsync(scenario.Source));
+        Assert.Equal("audio", await File.ReadAllTextAsync(scenario.Destination));
+        await AssertJournalStateAsync(scenario.OperationId,
+            FileMutationJournalState.CompletedSourceRetained, audiobookId: 78);
+        AssertNoLibraryArtifacts(scenario.Root);
+    }
+
+    [Fact]
+    public async Task PrepareMove_VerifiedRetryWithRemovedTargetAndChangedSource_ParksJournal()
+    {
+        var scenario = await CreateInterruptedVerifiedMoveAsync("registration-verified-source-changed");
+        File.Delete(scenario.Destination);
+        await File.WriteAllTextAsync(scenario.Source, "edited");
+
+        using var lease = await CreateMover().PrepareActionForRegistrationAsync(
+            FileAction.Move, scenario.Source, scenario.Destination, scenario.OperationId);
+
+        Assert.Null(lease);
+        await AssertJournalStateAsync(scenario.OperationId,
+            FileMutationJournalState.NeedsAttention, audiobookId: null);
+        Assert.False(File.Exists(scenario.Destination));
+        Assert.Equal("edited", await File.ReadAllTextAsync(scenario.Source));
+    }
+
+    [Fact]
+    public async Task PrepareMove_VerifiedRetryWithReplacedTarget_StillParksJournal()
+    {
+        var scenario = await CreateInterruptedVerifiedMoveAsync("registration-verified-target-replaced");
+        File.Delete(scenario.Destination);
+        await File.WriteAllTextAsync(scenario.Destination, "foreign target");
+
+        using var lease = await CreateMover().PrepareActionForRegistrationAsync(
+            FileAction.Move, scenario.Source, scenario.Destination, scenario.OperationId);
+
+        Assert.Null(lease);
+        await AssertJournalStateAsync(scenario.OperationId,
+            FileMutationJournalState.NeedsAttention, audiobookId: null);
+        Assert.Equal("foreign target", await File.ReadAllTextAsync(scenario.Destination));
+        Assert.Equal("audio", await File.ReadAllTextAsync(scenario.Source));
+    }
+
+    [Fact]
+    public async Task PrepareMove_CommittedRetryWithRemovedTarget_StillParksJournal()
+    {
+        var scenario = await CreateScenarioAsync("registration-committed-target-removed");
+        using (var firstLease = await CreateMover().PrepareActionForRegistrationAsync(
+            FileAction.Move, scenario.Source, scenario.Destination, scenario.OperationId))
+        {
+            Assert.NotNull(firstLease);
+            Assert.True(firstLease.PrepareCleanupRecovery(79));
+            Assert.Equal(RegistrationPublicationCompletion.Completed, firstLease.CompletePublication());
+        }
+        await AssertJournalStateAsync(scenario.OperationId,
+            FileMutationJournalState.RegistrationCommitted, audiobookId: 79);
+        File.Delete(scenario.Destination);
+
+        using var lease = await CreateMover().PrepareActionForRegistrationAsync(
+            FileAction.Move, scenario.Source, scenario.Destination, scenario.OperationId);
+
+        Assert.Null(lease);
+        await AssertJournalStateAsync(scenario.OperationId,
+            FileMutationJournalState.NeedsAttention, audiobookId: 79);
+    }
+
+    private async Task<Scenario> CreateInterruptedVerifiedMoveAsync(string name)
+    {
+        var scenario = await CreateScenarioAsync(name);
+        using (var firstLease = await CreateMover().PrepareActionForRegistrationAsync(
+            FileAction.Move, scenario.Source, scenario.Destination, scenario.OperationId))
+        {
+            Assert.NotNull(firstLease);
+        }
+        await AssertJournalStateAsync(scenario.OperationId,
+            FileMutationJournalState.TargetVerified, audiobookId: null);
+        Assert.Equal("audio", await File.ReadAllTextAsync(scenario.Source));
+        Assert.Equal("audio", await File.ReadAllTextAsync(scenario.Destination));
+        return scenario;
+    }
+
     private FileMover CreateMover(
         Func<Task>? afterSourceDeletedBeforeState = null,
         Func<Task>? afterSourceDeletedState = null,
