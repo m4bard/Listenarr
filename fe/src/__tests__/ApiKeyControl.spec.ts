@@ -120,4 +120,71 @@ describe('ApiKeyControl', () => {
     expect(wrapper.emitted()['update:apiKey']![0]).toEqual(['INITKEY'])
     expect(writeMock).toHaveBeenCalledWith('INITKEY')
   })
+
+  it('reveals the new key after a regeneration', async () => {
+    // @ts-expect-error - provide fake clipboard
+    global.navigator = { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } } as unknown
+    const confirmModule = await import('@/composables/useConfirm')
+    vi.spyOn(confirmModule, 'showConfirm').mockResolvedValue(true as unknown)
+    vi.doMock('@/services/api', () => ({
+      apiService: {
+        regenerateApiKey: vi.fn().mockResolvedValue({ apiKey: 'NEWKEY' }),
+        generateInitialApiKey: vi.fn(),
+      },
+    }))
+
+    const { default: ApiKeyControl } = await import('@/components/ui/ApiKeyControl.vue')
+    const wrapper = mount(ApiKeyControl, { props: { apiKey: 'OLDKEY' } })
+    expect(wrapper.find('input.api-key-field').attributes('type')).toBe('password')
+
+    await wrapper.find('button.regen-btn').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.find('input.api-key-field').attributes('type')).toBe('text')
+  })
+
+  it('still emits the new key and shows no error when the clipboard is unavailable', async () => {
+    // @ts-expect-error - plain http pages have no navigator.clipboard
+    global.navigator = {} as unknown
+    const confirmModule = await import('@/composables/useConfirm')
+    vi.spyOn(confirmModule, 'showConfirm').mockResolvedValue(true as unknown)
+    vi.doMock('@/services/api', () => ({
+      apiService: {
+        regenerateApiKey: vi.fn().mockResolvedValue({ apiKey: 'NEWKEY' }),
+        generateInitialApiKey: vi.fn(),
+      },
+    }))
+    const { useToast } = await import('@/services/toastService')
+    const { toasts } = useToast()
+
+    const { default: ApiKeyControl } = await import('@/components/ui/ApiKeyControl.vue')
+    const wrapper = mount(ApiKeyControl, { props: { apiKey: 'OLDKEY' } })
+    await wrapper.find('button.regen-btn').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.emitted()['update:apiKey']![0]).toEqual(['NEWKEY'])
+    expect(toasts.filter((t) => t.level === 'error')).toHaveLength(0)
+  })
+
+  it('shows an error toast and emits nothing when the regeneration fails', async () => {
+    const confirmModule = await import('@/composables/useConfirm')
+    vi.spyOn(confirmModule, 'showConfirm').mockResolvedValue(true as unknown)
+    vi.doMock('@/services/api', () => ({
+      apiService: {
+        regenerateApiKey: vi.fn().mockRejectedValue(new Error('refused')),
+        generateInitialApiKey: vi.fn(),
+      },
+    }))
+    const { useToast } = await import('@/services/toastService')
+    const { toasts } = useToast()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const { default: ApiKeyControl } = await import('@/components/ui/ApiKeyControl.vue')
+    const wrapper = mount(ApiKeyControl, { props: { apiKey: 'OLDKEY' } })
+    await wrapper.find('button.regen-btn').trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(toasts.filter((t) => t.level === 'error')).toHaveLength(1)
+    expect(wrapper.emitted()['update:apiKey']).toBeUndefined()
+  })
 })

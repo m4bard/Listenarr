@@ -239,7 +239,7 @@
         :authEnabled="authEnabled"
         @update:authEnabled="authEnabled = $event"
         @update:startupConfig="startupConfig = $event"
-        @update:apiKey="apiKey = $event"
+        @update:apiKey="onApiKeyUpdated"
         @update:settings="
           (v) => {
             settings = v
@@ -637,6 +637,12 @@ const apiForm = reactive({
 const settings = ref<ApplicationSettings | null>(null)
 const startupConfig = ref<import('@/types').StartupConfig | null>(null)
 const apiKey = ref('')
+
+// Keep the loaded startup config in step with a regenerated key, otherwise Save posts the old key back.
+function onApiKeyUpdated(newKey: string) {
+  apiKey.value = newKey
+  if (startupConfig.value) startupConfig.value = { ...startupConfig.value, apiKey: newKey }
+}
 const authEnabled = ref(false)
 
 const adminUsers = ref<
