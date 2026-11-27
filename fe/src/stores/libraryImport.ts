@@ -21,7 +21,11 @@ import { apiService } from '@/services/api'
 import { getApiValidationError } from '@/services/apiErrors'
 import { signalRService } from '@/services/signalr'
 import { logger } from '@/utils/logger'
-import { buildLibraryImportSearchParams } from '@/utils/libraryImportSearch'
+import {
+  buildLibraryImportInitialQuery,
+  buildLibraryImportSearchParams,
+} from '@/utils/libraryImportSearch'
+import { pickBestMatch } from '@/utils/libraryImportMatch'
 import {
   isEmptyRecord,
   recordOfResponse,
@@ -62,20 +66,6 @@ function extractFolderName(relativePath: string): string {
   const parts = relativePath.replace(/\\/g, '/').split('/').filter(Boolean)
   // Prefer the last meaningful segment (author/title structure)
   return parts[parts.length - 1] ?? relativePath
-}
-
-// From a list of search results, prefer the one whose author best matches detectedAuthor.
-// Falls back to results[0] when no author info is available on either side.
-function pickBestMatch(results: SearchResult[], detectedAuthor?: string): SearchResult | null {
-  if (!results.length) return null
-  if (!detectedAuthor) return results[0] ?? null
-  const needle = detectedAuthor.toLowerCase()
-  const scored = results.map((r) => {
-    const resultAuthor = (r.authors?.[0]?.name ?? '').toLowerCase()
-    const match = resultAuthor && (resultAuthor.includes(needle) || needle.includes(resultAuthor))
-    return { r, match }
-  })
-  return scored.find((s) => s.match)?.r ?? results[0] ?? null
 }
 
 // The Audible catalogue has no usable record for the match's ASIN in its region: the book must not
@@ -467,7 +457,9 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
         const results = await searchInRegion(searchParams)
         metadataFetchCount.value++
         // ASIN results are authoritative — take the first result directly without author comparison
-        const first = byAsin ? (results[0] ?? null) : pickBestMatch(results, item.detectedAuthor)
+        const first = byAsin
+          ? (results[0] ?? null)
+          : pickBestMatch(results, buildLibraryImportInitialQuery(item), item.detectedAuthor)
         // The row may have left the page meanwhile (another folder loaded or scanned)
         const current = items.value[id]
         if (!current) continue
