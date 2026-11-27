@@ -68,6 +68,12 @@ namespace Listenarr.Infrastructure.HostedServices.Search
         private readonly AutomaticSearchQualityEvaluator _qualityEvaluator;
         private readonly AutomaticSearchDownloadClientSelector _downloadClientSelector;
 
+        // How long one book may wait for its operation lock before the cycle moves on. The book
+        // stays eligible, so a long import delays its search instead of stalling every later book.
+        internal static readonly TimeSpan DefaultAudiobookLockWaitTimeout = TimeSpan.FromMinutes(5);
+
+        internal TimeSpan AudiobookLockWaitTimeout { get; set; } = DefaultAudiobookLockWaitTimeout;
+
         public AutomaticSearchProcessor(
             ILogger<AutomaticSearchProcessor> logger,
             IServiceScopeFactory serviceScopeFactory)
@@ -330,12 +336,31 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             // The reads above predate the indexer search and scoring, which can take minutes. Decide
             // and grab under the book's operation lock so a manual import that holds the book is
             // waited out, and the grab then sees the files it registered.
-            return await audiobookOperationCoordinator.ExecuteExclusiveAsync(
-                audiobook.Id,
-                _ => QueueTopResultAsync(
-                    audiobook, topResult, assessment, downloadService, automaticScoring,
-                    downloadRepository, fileRepository, stoppingToken),
-                stoppingToken);
+            // The wait is bounded so one long import cannot stall every later book in the cycle. The
+            // timer stops once the lock is held, so the grab itself is never cut short by it.
+            using var lockWait = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            lockWait.CancelAfter(AudiobookLockWaitTimeout);
+            _logger.LogInformation("Waiting up to {Timeout} for the operation lock of audiobook '{Title}' before grabbing",
+                AudiobookLockWaitTimeout, audiobook.Title);
+            try
+            {
+                return await audiobookOperationCoordinator.ExecuteExclusiveAsync(
+                    audiobook.Id,
+                    _ =>
+                    {
+                        lockWait.CancelAfter(Timeout.InfiniteTimeSpan);
+                        return QueueTopResultAsync(
+                            audiobook, topResult, assessment, downloadService, automaticScoring,
+                            downloadRepository, fileRepository, stoppingToken);
+                    },
+                    lockWait.Token);
+            }
+            catch (OperationCanceledException) when (lockWait.IsCancellationRequested && !stoppingToken.IsCancellationRequested)
+            {
+                _logger.LogWarning("Audiobook '{Title}' (ID: {Id}) stayed locked for {Timeout}; skipping the grab and leaving it eligible for the next cycle",
+                    audiobook.Title, audiobook.Id, AudiobookLockWaitTimeout);
+                throw;
+            }
         }
 
         private async Task<int> QueueTopResultAsync(
