@@ -84,7 +84,7 @@ public sealed class FileRegistrationOperatorResolveRefusalTests : BaseTests
     [InlineData("note", "tester", 63, true)]
     [InlineData("note", "tester", 65, true)]
     [InlineData("note", "tester", 64, false)]
-    public async Task Resolve_InvalidArguments_AreRejectedBeforeAnyRead(string note, string actor, int tokenLength, bool acknowledge)
+    public async Task Resolve_InvalidArguments_AreRejectedAndLeaveTheRowResolvable(string note, string actor, int tokenLength, bool acknowledge)
     {
         var seeded = await SeedAsync(FileService.GetTempDirectory("refuse-arguments"), DestinationShape.MissingFile);
         var service = CreateService(seeded.Factory);
@@ -138,7 +138,7 @@ public sealed class FileRegistrationOperatorResolveRefusalTests : BaseTests
         Assert.Equal(Note, row.ResolutionNote);
     }
 
-    public enum Race { StateChanged, FileIdAssigned, UpdatedAtBumped, AudiobookReassigned, ErrorChanged, SourceHashChanged }
+    public enum Race { StateChanged, FileIdAssigned, UpdatedAtBumped, AudiobookReassigned, ErrorChanged, SourceHashChanged, ActionChanged, DestinationPathChanged, SourceLengthChanged, SourcePathChanged, ProtocolVersionChanged }
 
     [Theory]
     [InlineData(Race.StateChanged)]
@@ -147,6 +147,11 @@ public sealed class FileRegistrationOperatorResolveRefusalTests : BaseTests
     [InlineData(Race.AudiobookReassigned)]
     [InlineData(Race.ErrorChanged)]
     [InlineData(Race.SourceHashChanged)]
+    [InlineData(Race.ActionChanged)]
+    [InlineData(Race.DestinationPathChanged)]
+    [InlineData(Race.SourceLengthChanged)]
+    [InlineData(Race.SourcePathChanged)]
+    [InlineData(Race.ProtocolVersionChanged)]
     public async Task Resolve_RowChangedBetweenInspectionAndWrite_IsRefusedAndDoesNotOverwrite(Race race)
     {
         var root = FileService.GetTempDirectory("refuse-race");
@@ -187,6 +192,11 @@ public sealed class FileRegistrationOperatorResolveRefusalTests : BaseTests
                 Race.UpdatedAtBumped => rows.ExecuteUpdateAsync(s => s.SetProperty(j => j.UpdatedAt, DateTime.UtcNow), token),
                 Race.AudiobookReassigned => rows.ExecuteUpdateAsync(s => s.SetProperty(j => j.AudiobookId, 999), token),
                 Race.ErrorChanged => rows.ExecuteUpdateAsync(s => s.SetProperty(j => j.Error, "Changed by another writer"), token),
+                Race.ActionChanged => rows.ExecuteUpdateAsync(s => s.SetProperty(j => j.Action, FileAction.Copy), token),
+                Race.DestinationPathChanged => rows.ExecuteUpdateAsync(s => s.SetProperty(j => j.DestinationPath, "other-destination"), token),
+                Race.SourceLengthChanged => rows.ExecuteUpdateAsync(s => s.SetProperty(j => j.SourceLength, j => j.SourceLength + 1), token),
+                Race.SourcePathChanged => rows.ExecuteUpdateAsync(s => s.SetProperty(j => j.SourcePath, "other-source"), token),
+                Race.ProtocolVersionChanged => rows.ExecuteUpdateAsync(s => s.SetProperty(j => j.ProtocolVersion, j => j.ProtocolVersion + 1), token),
                 _ => rows.ExecuteUpdateAsync(s => s.SetProperty(j => j.SourceSha256, new string('0', 64)), token)
             };
         };
@@ -215,7 +225,7 @@ public sealed class FileRegistrationOperatorResolveRefusalTests : BaseTests
     }
 
     [Fact]
-    public async Task Resolve_SourceOrDestinationChangedAfterInspection_IsStale()
+    public async Task Resolve_DestinationAppearingAfterInspection_IsStale()
     {
         var seeded = await SeedAsync(FileService.GetTempDirectory("refuse-files"), DestinationShape.MissingFile);
         var service = CreateService(seeded.Factory);
