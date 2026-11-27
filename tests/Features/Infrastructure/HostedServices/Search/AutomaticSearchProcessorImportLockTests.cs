@@ -52,6 +52,60 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
         }
 
         [Fact]
+        public async Task RunCycleAsync_ImportHoldsBookPastTimeout_SkipsBookAndLeavesItEligible()
+        {
+            var download = InitWithAcceptedRelease();
+            var audiobook = await SeedMonitoredAudiobookAsync();
+            var coordinator = _provider.GetRequiredService<IAudiobookOperationCoordinator>();
+            var importStarted = new TaskCompletionSource();
+            var importMayFinish = new TaskCompletionSource();
+            var import = coordinator.ExecuteExclusiveAsync(audiobook.Id, async _ =>
+            {
+                importStarted.SetResult();
+                await importMayFinish.Task;
+            });
+            await importStarted.Task;
+
+            await RunCycleAsync(lockWaitTimeout: TimeSpan.FromMilliseconds(300))
+                .WaitAsync(TimeSpan.FromSeconds(30));
+
+            VerifyGrabCount(download, Times.Never());
+            Assert.Null((await _audiobookRepository.GetByIdAsync(audiobook.Id))!.LastSearchTime);
+
+            importMayFinish.SetResult();
+            await import;
+            await RunCycleAsync(lockWaitTimeout: TimeSpan.FromMilliseconds(300));
+            VerifyGrabCount(download, Times.Once());
+        }
+
+        [Fact]
+        public async Task RunCycleAsync_ShutdownWhileWaitingForBook_StopsWithoutGrabbing()
+        {
+            var download = InitWithAcceptedRelease();
+            var audiobook = await SeedMonitoredAudiobookAsync();
+            var coordinator = _provider.GetRequiredService<IAudiobookOperationCoordinator>();
+            var importStarted = new TaskCompletionSource();
+            var importMayFinish = new TaskCompletionSource();
+            var import = coordinator.ExecuteExclusiveAsync(audiobook.Id, async _ =>
+            {
+                importStarted.SetResult();
+                await importMayFinish.Task;
+            });
+            await importStarted.Task;
+            using var shutdown = new CancellationTokenSource();
+
+            var cycle = RunCycleAsync(shutdown.Token);
+            await Task.Delay(200);
+            Assert.False(cycle.IsCompleted);
+            shutdown.Cancel();
+            await cycle.WaitAsync(TimeSpan.FromSeconds(30));
+
+            VerifyGrabCount(download, Times.Never());
+            importMayFinish.SetResult();
+            await import;
+        }
+
+        [Fact]
         public async Task RunCycleAsync_NoImportHoldsBook_Grabs()
         {
             var download = InitWithAcceptedRelease();
@@ -136,12 +190,18 @@ namespace Listenarr.Tests.Features.Infrastructure.HostedServices.Search
                 .WithSize(123_456)
                 .Build());
 
-        private async Task RunCycleAsync()
+        private async Task RunCycleAsync(
+            CancellationToken cancellationToken = default,
+            TimeSpan? lockWaitTimeout = null)
         {
             var processor = new AutomaticSearchProcessor(
                 NullLogger<AutomaticSearchProcessor>.Instance,
                 _provider.GetRequiredService<IServiceScopeFactory>());
-            await processor.RunCycleAsync(CancellationToken.None);
+            if (lockWaitTimeout.HasValue)
+            {
+                processor.AudiobookLockWaitTimeout = lockWaitTimeout.Value;
+            }
+            await processor.RunCycleAsync(cancellationToken);
         }
     }
 }
