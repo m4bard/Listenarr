@@ -31,11 +31,9 @@ namespace Listenarr.Tests.Features.Infrastructure.Images.Cache
         private const string Asin = "B008DFUGCQ";
         private const string AppImageUrl = "/api/v1/images/" + Asin;
 
-        [Fact]
+        [LinuxFact]
         public void Uri_TryCreate_reads_the_app_image_path_as_a_file_uri_on_linux()
         {
-            if (!OperatingSystem.IsLinux()) return;
-
             Assert.True(Uri.TryCreate(AppImageUrl, UriKind.Absolute, out var uri));
             Assert.Equal("file", uri.Scheme);
             Assert.False(ImageDownloadValidator.TryValidateExternalImageUrl(AppImageUrl, out var reason));
