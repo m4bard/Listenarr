@@ -2,10 +2,10 @@
 
 This build is NOT a stock release. It is upstream canary plus unmerged patches.
 
-    base:        ba95cd7b87bb39598cf1c3acc0fd2243583ce54b
-    base short:  ba95cd7b8
-    patches:     789
-    version:     1.10.12+m4bard.789
+    base:        7289d8ad10161304ba3b7fa2ef1c1b8ec9234d40
+    base short:  7289d8ad1
+    patches:     792
+    version:     1.10.13+m4bard.792
 
 ## Patches, oldest first
 
@@ -798,6 +798,9 @@ This build is NOT a stock release. It is upstream canary plus unmerged patches.
     c4a0b650e  #-    stack: merge PR head 9f2609af2
     3ec3cfad0  #-    stack: merge PR head 31e9aa5b3
     c27a16129  #-    stack: pass the stack's two-parameter audio probe to organize companions as a lambda
+    bfe1fd2c1  #-    stack: manifest for ba95cd7b8 plus 789 patches
+    ae45c93ec  #-    Merge upstream canary 7289d8ad1 (v1.10.13) into stack
+    f2160f311  #-    Merge PR #1222 head 4c081ff84 into stack
 
 ## How this stack was built
 
@@ -994,6 +997,16 @@ and the released-schema write context). It then adds #1195 at cd1954768 (SABnzbd
 metadata processing off) and #1224 at 31e9aa5b3 (a release the client already holds for a deleted book is adopted
 instead of refused), one merge each. #1224's processing job service is the stack's existing constructor parameter.
 
+The 1.10.12 refresh ends at its manifest commit, "stack: manifest for ba95cd7b8 plus 789 patches", the row before the
+1.10.13 merge. Upstream canary 1.10.13 (7289d8ad1) is then merged in: 28 commits of CI, test, end-to-end fixture and
+documentation changes with no product code (the one non-test file is the Dockerfile moving the Node.js install ahead of
+the source copy). The merge had two conflicts. Dockerfile takes upstream's earlier Node.js install and drops the stack's
+later copy of the same block, keeping the stack's version argument, the build line that passes it, and the health check.
+fe/vite.config.ts keeps both the stack's relative base and upstream's per-shard cache directory. #1023's one-line change
+to the end-to-end stack script and upstream's new image helpers in the same file are in different hunks and merged
+cleanly. #1222 is then brought to its current head 4c081ff84 (end-to-end fixtures renamed to corpus books, no product
+code). Every other carried PR head is unchanged since the 1.10.12 refresh.
+
 ## Known differences from the 1.7.4 stack
 
 - A fresh install stores MaxConcurrentIndexerSearches=0. Rolled back to the 1.7.4 stack, such an install searches
@@ -1013,6 +1026,6 @@ the fork-local #914 at 20261112054145, and #1151 at 20261114004926. Upstream add
 20261029020400 and 1.9.2 (1.8.5, 1.8.6, 1.9.0, 1.9.1 and 1.9.2 add none); 1.10.0 adds 20261119022628_AddAudiobookAddedDate,
 which sorts after every fork migration, so a database on the 1.9.2 stack applies it as the one pending migration. 1.10.6 adds
 20261121052354_AddMonitoringQualityProfile, which also sorts after every fork migration, so a database on the 1.10.5 stack
-applies it as the one pending migration. 1.10.7 to 1.10.12 add none, and neither do the PR heads merged in the 1.10.12
+applies it as the one pending migration. 1.10.7 to 1.10.13 add none, and neither do the PR heads merged in the 1.10.12
 refresh (#1023 and #1151 keep their ids). The history repoint for a database that ran an earlier stack is recomputed
 with this build's upgrade packet.
