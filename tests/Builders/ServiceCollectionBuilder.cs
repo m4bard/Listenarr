@@ -200,6 +200,7 @@ namespace Listenarr.Tests.Builders
             services.AddScoped<ReleaseAnnotationCatalogProvider>();
             services.AddSingleton(TestAnnotationCatalog.CreateSource());
             services.AddSingleton<MetadataStrategyCoordinator>();
+            services.AddSingleton<IAudiobookOperationCoordinator, AudiobookOperationCoordinator>();
             services.AddSingleton<AsinCandidateCollector>();
             services.AddSingleton<AsinEnricher>();
             services.AddSingleton<SearchResultScorerService>();

@@ -93,6 +93,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             var downloadService = scope.ServiceProvider.GetRequiredService<IDownloadService>();
             var configurationService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
             var automaticScoring = scope.ServiceProvider.GetRequiredService<IAutomaticSearchScoringService>();
+            var audiobookOperationCoordinator = scope.ServiceProvider.GetRequiredService<IAudiobookOperationCoordinator>();
 
             var timing = AutomaticSearchTiming.FromSettings(await configurationService.GetApplicationSettingsAsync());
 
@@ -127,7 +128,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
                     isFirstBook = false;
 
                     var downloadsQueuedForBook = await ProcessAudiobookAsync(
-                        audiobook, searchService, downloadService, automaticScoring, audiobookRepository, downloadRepository, fileRepository, stoppingToken);
+                        audiobook, searchService, downloadService, automaticScoring, audiobookRepository, downloadRepository, fileRepository, audiobookOperationCoordinator, stoppingToken);
 
                     downloadsQueued += downloadsQueuedForBook;
                     processedCount++;
@@ -165,6 +166,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             IAudiobookRepository audiobookRepository,
             IDownloadRepository downloadRepository,
             IAudiobookFileRepository fileRepository,
+            IAudiobookOperationCoordinator audiobookOperationCoordinator,
             CancellationToken stoppingToken)
         {
             if (audiobook.QualityProfile == null)
@@ -175,13 +177,7 @@ namespace Listenarr.Infrastructure.HostedServices.Search
 
             // Check if there's already an active download for this audiobook
             var allDownloads = await downloadRepository.GetByAudiobookIdAsync(audiobook.Id, stoppingToken);
-            var activeDownload = allDownloads.FirstOrDefault(d =>
-                d.Status == DownloadStatus.Queued ||
-                d.Status == DownloadStatus.Downloading ||
-                d.Status == DownloadStatus.Paused ||
-                d.Status == DownloadStatus.Processing ||
-                d.Status == DownloadStatus.Ready ||
-                d.Status == DownloadStatus.ImportPending);
+            var activeDownload = allDownloads.FirstOrDefault(IsActiveDownload);
 
             if (activeDownload != null)
             {
@@ -331,6 +327,43 @@ namespace Listenarr.Infrastructure.HostedServices.Search
             _logger.LogInformation("Found top result for audiobook '{Title}': {ResultTitle} (Score: {Score}, Quality: {Quality})",
                 audiobook.Title, topResult.SearchResult.Title, topResult.TotalScore, topResult.SearchResult.Quality);
 
+            // The reads above predate the indexer search and scoring, which can take minutes. Decide
+            // and grab under the book's operation lock so a manual import that holds the book is
+            // waited out, and the grab then sees the files it registered.
+            return await audiobookOperationCoordinator.ExecuteExclusiveAsync(
+                audiobook.Id,
+                _ => QueueTopResultAsync(
+                    audiobook, topResult, assessment, downloadService, automaticScoring,
+                    downloadRepository, fileRepository, stoppingToken),
+                stoppingToken);
+        }
+
+        private async Task<int> QueueTopResultAsync(
+            Audiobook audiobook,
+            AutomaticCandidateScore topResult,
+            AutomaticSearchAssessment assessment,
+            IDownloadService downloadService,
+            IAutomaticSearchScoringService automaticScoring,
+            IDownloadRepository downloadRepository,
+            IAudiobookFileRepository fileRepository,
+            CancellationToken stoppingToken)
+        {
+            var allDownloads = await downloadRepository.GetByAudiobookIdAsync(audiobook.Id, stoppingToken);
+            var activeDownload = allDownloads.FirstOrDefault(IsActiveDownload);
+            if (activeDownload != null)
+            {
+                _logger.LogInformation("Audiobook '{Title}' gained an active download (ID: {DownloadId}, Status: {Status}) during the search, skipping the grab",
+                    audiobook.Title, activeDownload.Id, activeDownload.Status);
+                return 0;
+            }
+
+            var (cutoffMet, bestExistingQuality) = await _qualityEvaluator.GetExistingQualityAsync(audiobook, downloadRepository, fileRepository, stoppingToken);
+            if (cutoffMet)
+            {
+                _logger.LogInformation("Quality cutoff was met for audiobook '{Title}' during the search, skipping the grab", audiobook.Title);
+                return 0;
+            }
+
             // Check if the found result is better quality than what we already have
             if (!string.IsNullOrEmpty(bestExistingQuality))
             {
@@ -391,6 +424,14 @@ namespace Listenarr.Infrastructure.HostedServices.Search
 
             return downloadsQueued;
         }
+
+        private static bool IsActiveDownload(Download download) =>
+            download.Status == DownloadStatus.Queued ||
+            download.Status == DownloadStatus.Downloading ||
+            download.Status == DownloadStatus.Paused ||
+            download.Status == DownloadStatus.Processing ||
+            download.Status == DownloadStatus.Ready ||
+            download.Status == DownloadStatus.ImportPending;
 
         // A debug broadcast must never decide whether a grab happens. Contain every failure,
         // including an OperationCanceledException that is not the host stopping (a timeout
