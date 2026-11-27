@@ -58,10 +58,12 @@ import { ref } from 'vue'
 import { PhCopy, PhCheck, PhArrowClockwise, PhEye, PhEyeSlash } from '@phosphor-icons/vue'
 import { apiService } from '@/services/api'
 import { showConfirm } from '@/composables/useConfirm'
+import { useToast } from '@/services/toastService'
 
 const props = withDefaults(defineProps<{ apiKey?: string }>(), { apiKey: '' })
 const emit = defineEmits(['update:apiKey'])
 
+const toast = useToast()
 const copySuccess = ref(false)
 const show = ref(false)
 
@@ -89,29 +91,31 @@ async function onRegenerate() {
   )
   if (!confirmed) return
   try {
-    if (!props.apiKey) {
-      const res = await apiService.generateInitialApiKey()
-      if (res?.apiKey) {
-        emit('update:apiKey', res.apiKey)
-        await navigator.clipboard.writeText(res.apiKey)
-        copySuccess.value = true
-        setTimeout(() => {
-          copySuccess.value = false
-        }, 2000)
-      }
-    } else {
-      const res = await apiService.regenerateApiKey()
-      if (res?.apiKey) {
-        emit('update:apiKey', res.apiKey)
-        await navigator.clipboard.writeText(res.apiKey)
-        copySuccess.value = true
-        setTimeout(() => {
-          copySuccess.value = false
-        }, 2000)
-      }
-    }
+    const res = props.apiKey
+      ? await apiService.regenerateApiKey()
+      : await apiService.generateInitialApiKey()
+    if (!res?.apiKey) return
+    emit('update:apiKey', res.apiKey)
+    // Reveal the new key: a masked field looks identical to the old one
+    show.value = true
+    await copyToClipboard(res.apiKey)
   } catch (e) {
     console.error('Failed to (re)generate API key', e)
+    toast.error('API key', 'Failed to generate a new API key. Check the server log and try again.')
+  }
+}
+
+// Best effort: navigator.clipboard is undefined on plain http pages, and the key
+// is already generated and shown by the time this runs.
+async function copyToClipboard(key: string) {
+  try {
+    await navigator.clipboard.writeText(key)
+    copySuccess.value = true
+    setTimeout(() => {
+      copySuccess.value = false
+    }, 2000)
+  } catch (e) {
+    console.error('Clipboard write failed', e)
   }
 }
 </script>
