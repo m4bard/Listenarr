@@ -34,19 +34,23 @@ public sealed class FileRegistrationRecoveryControllerTests : BaseTests
         service.Verify(s => s.ResolveAsync(operationId, Token, "note", true, "operator-1", It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    [Fact]
-    public async Task Resolve_WithoutAnyIdentity_StillSuppliesANonEmptyActor()
+    [Theory]
+    [InlineData(null, false, "Local operator (authentication disabled)")]
+    [InlineData(null, true, "Authenticated operator")]
+    [InlineData("operator-name", true, "operator-name")]
+    public async Task Resolve_ActorFallsBackFromNameToAGenericLabel_WhenNoNameIdentifierClaimExists(
+        string? name, bool authenticated, string expectedActor)
     {
         var operationId = Guid.NewGuid();
-        string? actor = null;
         var service = new Mock<IFileRegistrationRecoveryService>(MockBehavior.Strict);
-        service.Setup(s => s.ResolveAsync(operationId, Token, "note", true, It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Callback<Guid, string, string, bool, string, CancellationToken>((_, _, _, _, caller, _) => actor = caller)
+        service.Setup(s => s.ResolveAsync(operationId, Token, "note", true, expectedActor, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Review(operationId));
+        var claims = name == null ? [] : new[] { new Claim(ClaimTypes.Name, name) };
+        var identity = new ClaimsIdentity(claims, authenticated ? "test" : null);
 
-        await Controller(service, Coordinator(), new ClaimsPrincipal(new ClaimsIdentity())).Resolve(operationId, Request, CancellationToken.None);
+        await Controller(service, Coordinator(), new ClaimsPrincipal(identity)).Resolve(operationId, Request, CancellationToken.None);
 
-        Assert.False(string.IsNullOrWhiteSpace(actor));
+        service.Verify(s => s.ResolveAsync(operationId, Token, "note", true, expectedActor, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Theory]
