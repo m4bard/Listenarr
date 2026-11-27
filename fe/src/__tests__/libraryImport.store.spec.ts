@@ -593,11 +593,11 @@ describe('library import store', () => {
       store.startProcessing()
       await vi.waitFor(() => expect(advancedSearch).toHaveBeenCalledTimes(1))
       await store.triggerScan(5)
-      firstSearch.resolve([{ title: 'Book B1' } as SearchResult])
+      firstSearch.resolve([{ title: '/srv/5/B1.mp3' } as SearchResult])
 
       await vi.waitFor(() => expect(store.isProcessing).toBe(false))
       expect(advancedSearch).toHaveBeenCalledTimes(2)
-      expect(store.items['/srv/5/B1.mp3']?.selectedMatch?.title).toBe('Book B1')
+      expect(store.items['/srv/5/B1.mp3']?.selectedMatch?.title).toBe('/srv/5/B1.mp3')
     })
 
     it('does not let a stopped Start Matching run end the run started after it', async () => {
