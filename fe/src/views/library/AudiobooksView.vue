@@ -1510,6 +1510,12 @@ function getBookSeriesNames(book: Audiobook): string[] {
   return legacy ? [legacy] : []
 }
 
+// The collections a book is listed under in the Authors and Series groups; none means no card
+function getGroupKeys(book: Audiobook): string[] {
+  if (groupBy.value === 'authors') return book.authors?.[0] ? [book.authors[0]] : []
+  return getBookSeriesNames(book)
+}
+
 const groupedCollections = computed(() => {
   if (groupBy.value === 'books') return []
 
@@ -1520,13 +1526,7 @@ const groupedCollections = computed(() => {
   >()
 
   books.forEach((book) => {
-    const keys =
-      groupBy.value === 'authors'
-        ? book.authors?.[0]
-          ? [book.authors[0]]
-          : []
-        : getBookSeriesNames(book)
-    for (const key of keys) {
+    for (const key of getGroupKeys(book)) {
       if (!key) continue
       if (!groups.has(key)) {
         if (groupBy.value === 'authors') {
@@ -2537,15 +2537,15 @@ async function handleEditSaved() {
   }
 }
 
-// In "Broken books", Select All takes only the broken books shown, so Repair and Delete
-// can't reach healthy books hidden by the group
+// Select All takes only the books shown (after search, filters and group), so Edit, Organize,
+// Repair and Delete Selected can't reach the books those hide. In the Authors and Series
+// groups a book with no author or series has no card and is not shown.
 function selectAllBooks() {
-  if (!brokenOnly.value) {
-    libraryStore.selectAll()
-    return
-  }
   libraryStore.clearSelection()
-  for (const book of audiobooks.value) libraryStore.toggleSelection(book.id)
+  for (const book of audiobooks.value) {
+    if (groupBy.value !== 'books' && getGroupKeys(book).length === 0) continue
+    libraryStore.toggleSelection(book.id)
+  }
 }
 
 function applyCheckboxSelection(audiobook: Audiobook, shiftKey: boolean) {

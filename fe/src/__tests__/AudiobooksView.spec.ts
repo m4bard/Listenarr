@@ -33,6 +33,13 @@ const { mockGetAudiobookDeleteCapabilities } = vi.hoisted(() => ({
   })),
 }))
 
+const { mockShowConfirm } = vi.hoisted(() => ({ mockShowConfirm: vi.fn(async () => true) }))
+
+vi.mock('@/composables/useConfirm', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/composables/useConfirm')>()),
+  showConfirm: mockShowConfirm,
+}))
+
 vi.mock('@/services/api', () => ({
   apiService: {
     getQualityProfiles: vi.fn(async () => []),
@@ -63,6 +70,62 @@ type AudiobooksVm = {
 }
 
 const getVm = (wrapper: ReturnType<typeof mount>) => wrapper.vm as unknown as AudiobooksVm
+
+async function mountLibrary(
+  library: Array<{ id: number; title: string; brokenReasons: string[]; [key: string]: unknown }>,
+  path = '/audiobooks',
+) {
+  if (
+    typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'
+  ) {
+    ;(globalThis as unknown as Record<string, unknown>).ResizeObserver = class {
+      observe() {}
+      disconnect() {}
+    }
+  }
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', name: 'home', component: { template: '<div />' } },
+      { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
+    ],
+  })
+  await router.push(path)
+  await router.isReady().catch(() => {})
+  const store = useLibraryStore()
+  store.audiobooks = library.map((b) => ({
+    authors: ['Author'],
+    files: [],
+    ...b,
+  })) as unknown as import('@/types').Audiobook[]
+  store.fetchLibrary = vi.fn(async () => undefined)
+  const wrapper = mount(AudiobooksView, {
+    global: {
+      plugins: [pinia, router],
+      stubs: [
+        'BulkEditModal',
+        'EditAudiobookModal',
+        'CustomFilterModal',
+        'FiltersDropdown',
+        'CustomSelect',
+      ],
+    },
+  })
+  await new Promise((r) => setTimeout(r, 0))
+  return { wrapper, router }
+}
+
+const shownIds = (wrapper: ReturnType<typeof mount>) =>
+  (getVm(wrapper).audiobooks ?? []).map((b) => b.id).sort()
+
+const clickSelectAll = async (wrapper: ReturnType<typeof mount>) => {
+  const button = wrapper.findAll('button.toolbar-btn').find((b) => b.text() === 'Select All')
+  expect(button).toBeDefined()
+  await button!.trigger('click')
+  await wrapper.vm.$nextTick()
+}
 
 describe('AudiobooksView', () => {
   beforeEach(() => {
@@ -1005,56 +1068,6 @@ describe('AudiobooksView Grouping', () => {
       { id: 4, title: 'Also fine', brokenReasons: [] },
     ]
 
-    async function mountLibrary(
-      library: Array<{ id: number; title: string; brokenReasons: string[] }>,
-      path = '/audiobooks',
-    ) {
-      if (
-        typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver ===
-        'undefined'
-      ) {
-        ;(globalThis as unknown as Record<string, unknown>).ResizeObserver = class {
-          observe() {}
-          disconnect() {}
-        }
-      }
-      const pinia = createPinia()
-      setActivePinia(pinia)
-      const router = createRouter({
-        history: createMemoryHistory(),
-        routes: [
-          { path: '/', name: 'home', component: { template: '<div />' } },
-          { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
-        ],
-      })
-      await router.push(path)
-      await router.isReady().catch(() => {})
-      const store = useLibraryStore()
-      store.audiobooks = library.map((b) => ({
-        ...b,
-        authors: ['Author'],
-        files: [],
-      })) as unknown as import('@/types').Audiobook[]
-      store.fetchLibrary = vi.fn(async () => undefined)
-      const wrapper = mount(AudiobooksView, {
-        global: {
-          plugins: [pinia, router],
-          stubs: [
-            'BulkEditModal',
-            'EditAudiobookModal',
-            'CustomFilterModal',
-            'FiltersDropdown',
-            'CustomSelect',
-          ],
-        },
-      })
-      await new Promise((r) => setTimeout(r, 0))
-      return { wrapper, router }
-    }
-
-    const shownIds = (wrapper: ReturnType<typeof mount>) =>
-      (getVm(wrapper).audiobooks ?? []).map((b) => b.id).sort()
-
     beforeEach(() => {
       localStorage.removeItem('listenarr.groupBy')
     })
@@ -1106,13 +1119,6 @@ describe('AudiobooksView Grouping', () => {
 
       expect(shownIds(wrapper)).toEqual([2, 3])
     })
-
-    const clickSelectAll = async (wrapper: ReturnType<typeof mount>) => {
-      const button = wrapper.findAll('button.toolbar-btn').find((b) => b.text() === 'Select All')
-      expect(button).toBeDefined()
-      await button!.trigger('click')
-      await wrapper.vm.$nextTick()
-    }
 
     it('selects only the broken books with Select All, so Repair leaves the healthy ones out', async () => {
       const { wrapper } = await mountLibrary(books, '/audiobooks?group=broken')
@@ -1270,5 +1276,132 @@ describe('AudiobooksView Grouping', () => {
     expect(organize.props('audiobookIds')).toEqual([123])
     expect(store.fetchLibrary).toHaveBeenCalledTimes(1)
     endRefresh()
+  })
+})
+
+describe('AudiobooksView Select All', () => {
+  const library = [
+    { id: 1, title: 'Alpha one', brokenReasons: [], monitored: true },
+    { id: 2, title: 'Alpha two', brokenReasons: [], monitored: false },
+    { id: 3, title: 'Beta three', brokenReasons: [], monitored: false },
+    { id: 4, title: 'Beta four', brokenReasons: [], monitored: true },
+  ]
+
+  beforeEach(() => {
+    localStorage.removeItem('listenarr.searchQuery')
+    localStorage.removeItem('listenarr.groupBy')
+    mockShowConfirm.mockClear()
+  })
+
+  afterEach(() => {
+    localStorage.removeItem('listenarr.searchQuery')
+    localStorage.removeItem('listenarr.groupBy')
+  })
+
+  it('selects only the books matching the search', async () => {
+    localStorage.setItem('listenarr.searchQuery', 'alpha')
+    const { wrapper } = await mountLibrary(library)
+    expect(shownIds(wrapper)).toEqual([1, 2])
+
+    await clickSelectAll(wrapper)
+
+    expect([...useLibraryStore().selectedIds].sort()).toEqual([1, 2])
+  })
+
+  it('selects only the books matching the active filter', async () => {
+    const { wrapper } = await mountLibrary(library)
+    getVm(wrapper).selectedFilterId = 'unmonitored'
+    await wrapper.vm.$nextTick()
+    expect(shownIds(wrapper)).toEqual([2, 3])
+
+    await clickSelectAll(wrapper)
+
+    expect([...useLibraryStore().selectedIds].sort()).toEqual([2, 3])
+  })
+
+  it('selects only the filtered books in the Authors group', async () => {
+    const { wrapper } = await mountLibrary(library)
+    getVm(wrapper).selectedFilterId = 'monitored'
+    await getVm(wrapper).setGroupBy?.('authors')
+    await wrapper.vm.$nextTick()
+    expect(shownIds(wrapper)).toEqual([1, 4])
+
+    await clickSelectAll(wrapper)
+
+    expect([...useLibraryStore().selectedIds].sort()).toEqual([1, 4])
+  })
+
+  it('deletes only the filtered books after Select All', async () => {
+    const { wrapper } = await mountLibrary(library)
+    const store = useLibraryStore()
+    store.bulkRemoveFromLibrary = vi.fn(async () => ({ success: true, deletedCount: 2 }))
+    getVm(wrapper).selectedFilterId = 'unmonitored'
+    await wrapper.vm.$nextTick()
+    expect(shownIds(wrapper)).toEqual([2, 3])
+
+    await clickSelectAll(wrapper)
+    const deleteButton = wrapper
+      .findAll('button.toolbar-btn')
+      .find((b) => b.text().startsWith('Delete Selected'))
+    expect(deleteButton!.text()).toContain('Delete Selected (2)')
+    await deleteButton!.trigger('click')
+    await flushPromises()
+
+    expect(store.bulkRemoveFromLibrary).toHaveBeenCalledTimes(1)
+    expect(
+      [...(vi.mocked(store.bulkRemoveFromLibrary).mock.calls[0]![0] as number[])].sort(),
+    ).toEqual([2, 3])
+  })
+
+  // Read from the rendered cards, not from the view's own book list that Select All reads
+  const cardBadgeCounts = (wrapper: ReturnType<typeof mount>) =>
+    wrapper.findAll('.collection-card .series-count-badge').map((badge) => badge.text())
+
+  it('selects only the books that have a series card in the Series group', async () => {
+    const { wrapper } = await mountLibrary([
+      {
+        id: 1,
+        title: 'Alpha one',
+        brokenReasons: [],
+        series: 'Series One',
+        imageUrl: 'https://example.invalid/cover1.jpg',
+      },
+      {
+        id: 2,
+        title: 'Alpha two',
+        brokenReasons: [],
+        series: 'Series One',
+        imageUrl: 'https://example.invalid/cover2.jpg',
+      },
+      { id: 3, title: 'Beta three', brokenReasons: [] },
+      { id: 4, title: 'Beta four', brokenReasons: [] },
+    ])
+    await getVm(wrapper).setGroupBy?.('series')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findAll('.collection-card')).toHaveLength(1)
+    expect(wrapper.get('.collection-card').text()).toContain('Series One')
+    expect(cardBadgeCounts(wrapper)).toEqual(['2'])
+
+    await clickSelectAll(wrapper)
+
+    expect([...useLibraryStore().selectedIds].sort()).toEqual([1, 2])
+  })
+
+  it('selects only the books that have an author card in the Authors group', async () => {
+    const { wrapper } = await mountLibrary([
+      { id: 1, title: 'Alpha one', brokenReasons: [], authors: ['Author One'] },
+      { id: 2, title: 'Alpha two', brokenReasons: [], authors: ['Author One'] },
+      { id: 3, title: 'Beta three', brokenReasons: [], authors: [] },
+      { id: 4, title: 'Beta four', brokenReasons: [], authors: [] },
+    ])
+    await getVm(wrapper).setGroupBy?.('authors')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findAll('.collection-card')).toHaveLength(1)
+    expect(wrapper.get('[data-author-name]').attributes('data-author-name')).toBe('Author One')
+    expect(cardBadgeCounts(wrapper)).toEqual(['2'])
+
+    await clickSelectAll(wrapper)
+
+    expect([...useLibraryStore().selectedIds].sort()).toEqual([1, 2])
   })
 })
