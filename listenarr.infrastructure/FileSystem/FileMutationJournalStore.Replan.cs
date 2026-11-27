@@ -4,10 +4,13 @@ namespace Listenarr.Infrastructure.FileSystem;
 
 internal sealed partial class EfFileMutationJournalStore
 {
-    // The one backward transition. A verified publication that no audiobook or file
-    // owns has registered nothing, so it may be planned again once its published
-    // copy is gone. Any owner, or any other state, keeps the monotonic rule.
-    public async Task<FileMutationJournal> ReplanUnownedVerifiedAsync(
+    // The one backward transition. A created or verified publication that no
+    // audiobook or file owns has no owner commit behind it, so it may be planned
+    // again once its published copy is gone (the caller checks that). A catalog row
+    // for the path may exist in a narrow window, which the retry tolerates because
+    // the same bytes are republished. Any owner, or any other state, keeps the
+    // monotonic rule.
+    public async Task<FileMutationJournal> ReplanUnownedPublicationAsync(
         Guid operationId,
         CancellationToken cancellationToken)
     {
@@ -16,12 +19,12 @@ internal sealed partial class EfFileMutationJournalStore
         var journal = await db.FileMutationJournals.SingleAsync(
             candidate => candidate.OperationId == operationId,
             cancellationToken);
-        if (journal.State != FileMutationJournalState.TargetVerified
+        if (!IsReplannableState(journal.State)
             || journal.AudiobookId.HasValue
             || journal.AudiobookFileId.HasValue)
         {
             throw new InvalidOperationException(
-                "Only a verified registration publication without an owner can be planned again.");
+                "Only a created or verified registration publication without an owner can be planned again.");
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -37,7 +40,8 @@ internal sealed partial class EfFileMutationJournalStore
 
         var affected = await db.FileMutationJournals
             .Where(candidate => candidate.OperationId == operationId
-                && candidate.State == FileMutationJournalState.TargetVerified
+                && (candidate.State == FileMutationJournalState.TargetVerified
+                    || candidate.State == FileMutationJournalState.TargetIdentityPersisted)
                 && candidate.AudiobookId == null
                 && candidate.AudiobookFileId == null)
             .ExecuteUpdateAsync(
@@ -66,4 +70,8 @@ internal sealed partial class EfFileMutationJournalStore
             candidate => candidate.OperationId == operationId,
             cancellationToken);
     }
+
+    private static bool IsReplannableState(FileMutationJournalState state) =>
+        state is FileMutationJournalState.TargetVerified
+            or FileMutationJournalState.TargetIdentityPersisted;
 }

@@ -173,7 +173,7 @@ public partial class FileMover
                 }
             }
 
-            journal = await ReplanRemovedVerifiedTargetAsync(
+            journal = await ReplanRemovedUnownedTargetAsync(
                 gate,
                 journal,
                 cancellationToken);
