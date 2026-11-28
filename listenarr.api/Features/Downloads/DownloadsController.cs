@@ -183,7 +183,9 @@ public class DownloadsController : ControllerBase
                 return NotFound(new { error = "Download not found", id });
             }
 
-            if (download.Status != DownloadStatus.ImportBlocked)
+            // ImportPending is accepted too: a previous retry may have unblocked the download and then failed
+            // to requeue its job. Requeueing is a no-op while a job is active.
+            if (download.Status is not (DownloadStatus.ImportBlocked or DownloadStatus.ImportPending))
             {
                 return BadRequest(new
                 {
@@ -193,9 +195,12 @@ public class DownloadsController : ControllerBase
                 });
             }
 
-            download.Unblock();
+            if (download.IsBlocked())
+            {
+                download.Unblock();
+                await _downloadService.UpdateAsync(download);
+            }
 
-            await _downloadService.UpdateAsync(download);
             // The download must be ImportPending before its job runs, or the processor rejects it as not ready.
             await _downloadProcessingJobService.RequeueAsync(download);
 

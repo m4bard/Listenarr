@@ -43,6 +43,13 @@ namespace Listenarr.Infrastructure.Downloads.Processing
             {
                 await ScheduleRetryAsync(job, jobService, historyRepository, download, audiobook,
                     correlationId, exception.Message, ct);
+                if (job.Status == ProcessingJobStatus.Failed)
+                {
+                    // The retries ran out: keep the conflict reason, as for a terminal conflict.
+                    download.AddBlockMessage(exception.Message);
+                    await downloadService.UpdateAsync(download);
+                }
+
                 return;
             }
 

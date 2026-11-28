@@ -67,7 +67,30 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
             Assert.Equal(ProcessingJobStatus.Failed, savedJob.Status);
             Assert.Equal(job.MaxRetries, savedJob.RetryCount);
             Assert.Equal(job.MaxRetries + 1, importCalls);
-            Assert.Equal(DownloadStatus.ImportBlocked, (await _downloadRepository.GetByIdAsync(download.Id))!.Status);
+            var blocked = (await _downloadRepository.GetByIdAsync(download.Id))!;
+            Assert.Equal(DownloadStatus.ImportBlocked, blocked.Status);
+            Assert.Contains(MoveActiveMessage, blocked.ImportBlockMessages!);
+        }
+
+        [Fact]
+        public async Task RegistrationRecoveryPending_IsRetriedAndImportsOnceRecoveryFinishes()
+        {
+            blocker = new ApplicationConflictException("registration_recovery_pending",
+                "A previously committed file import (00000000-0000-0000-0000-000000000001) is still completing its durable publication. Retry after recovery finishes.");
+            var (download, job) = await QueueImportAsync();
+
+            await ProcessQueueAsync();
+
+            var retrying = (await _downloadProcessingJobRepository.GetByIdAsync(job.Id))!;
+            Assert.Equal(ProcessingJobStatus.Pending, retrying.Status);
+            Assert.Equal(1, retrying.RetryCount);
+
+            blocker = null;
+            await MakeRetryDueAsync(job.Id);
+            await ProcessQueueAsync();
+
+            Assert.Equal(ProcessingJobStatus.Completed, (await _downloadProcessingJobRepository.GetByIdAsync(job.Id))!.Status);
+            Assert.Equal(DownloadStatus.Moved, (await _downloadRepository.GetByIdAsync(download.Id))!.Status);
         }
 
         [Theory]
@@ -122,6 +145,41 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
         }
 
         [Fact]
+        public async Task RetryImport_AfterTheRequeueFailedOnce_CanBeRetriedAndTheJobRuns()
+        {
+            blocker = new ApplicationConflictException("move_repair_required", "repair needed");
+            var (download, job) = await QueueImportAsync();
+            await ProcessQueueAsync();
+            blocker = null;
+
+            var realService = _provider.GetRequiredService<IDownloadProcessingJobService>();
+            var failOnce = true;
+            var flakyService = new Mock<IDownloadProcessingJobService>();
+            flakyService.Setup(service => service.RequeueAsync(It.IsAny<Download>()))
+                .Returns((Download d) => failOnce
+                    ? Task.FromException<string>(new IOException("database busy"))
+                    : realService.RequeueAsync(d));
+            var controller = new DownloadsController(
+                _provider.GetRequiredService<IDownloadRepository>(),
+                _provider.GetRequiredService<IDownloadService>(),
+                flakyService.Object,
+                _provider.GetRequiredService<ILogger<DownloadsController>>(),
+                _provider.GetRequiredService<IConfigurationService>());
+
+            var first = await controller.RetryBlockedImport(download.Id);
+            Assert.Equal(500, Assert.IsType<ObjectResult>(first).StatusCode);
+            Assert.Equal(ProcessingJobStatus.Failed, (await _downloadProcessingJobRepository.GetByIdAsync(job.Id))!.Status);
+            Assert.Equal(DownloadStatus.ImportPending, (await _downloadRepository.GetByIdAsync(download.Id))!.Status);
+
+            failOnce = false;
+            Assert.IsType<OkObjectResult>(await controller.RetryBlockedImport(download.Id));
+            await ProcessQueueAsync();
+
+            Assert.Equal(ProcessingJobStatus.Completed, (await _downloadProcessingJobRepository.GetByIdAsync(job.Id))!.Status);
+            Assert.Equal(DownloadStatus.Moved, (await _downloadRepository.GetByIdAsync(download.Id))!.Status);
+        }
+
+        [Fact]
         public async Task RetryImport_CalledTwice_LeavesASingleActiveJob()
         {
             blocker = new ApplicationConflictException("move_repair_required", "repair needed");
@@ -133,7 +191,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Processing
             await controller.RetryBlockedImport(download.Id);
             var second = await controller.RetryBlockedImport(download.Id);
 
-            Assert.IsType<BadRequestObjectResult>(second);
+            Assert.IsType<OkObjectResult>(second);
             var jobs = await _downloadProcessingJobRepository.GetByDownloadIdAsync(download.Id);
             Assert.Equal(job.Id, Assert.Single(jobs).Id);
         }
