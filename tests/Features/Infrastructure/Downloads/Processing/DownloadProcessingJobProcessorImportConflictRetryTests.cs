@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
 using Listenarr.Application.Common.Exceptions;
-using Listenarr.Domain.Audiobooks.Enumerations;
 using Listenarr.Tests.Builders;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Mocks.DownloadClients;
