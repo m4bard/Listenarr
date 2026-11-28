@@ -56,6 +56,33 @@ namespace Listenarr.Application.Downloads.Processing
                 throw new InvalidOperationException($"Trying to enqueue an import job for download {download.Id} with status {download.Status}: Status should be Completed");
             }
 
+            return await AddJobAsync(download);
+        }
+
+        public async Task<string> RequeueAsync(Download download)
+        {
+            var existingActive = await jobRepository.GetActiveByDownloadIdAsync(download.Id);
+            if (existingActive != null)
+            {
+                return existingActive.Id;
+            }
+
+            var failedJob = (await jobRepository.GetByDownloadIdAsync(download.Id))
+                .Where(j => j.Status == ProcessingJobStatus.Failed)
+                .OrderByDescending(j => j.CreatedAt)
+                .FirstOrDefault();
+            if (failedJob == null)
+            {
+                return await AddJobAsync(download);
+            }
+
+            await jobRepository.UpdateAsync(failedJob.Requeue("Requeued for another import attempt"));
+            logger.LogInformation("Requeued failed job {JobId} for download {DownloadId}", failedJob.Id, download.Id);
+            return failedJob.Id;
+        }
+
+        private async Task<string> AddJobAsync(Download download)
+        {
             var job = new DownloadProcessingJob
             {
                 DownloadId = download.Id,
@@ -76,7 +103,7 @@ namespace Listenarr.Application.Downloads.Processing
             }
             catch (UniqueConstraintViolationException)
             {
-                existingActive = await jobRepository.GetActiveByDownloadIdAsync(download.Id);
+                var existingActive = await jobRepository.GetActiveByDownloadIdAsync(download.Id);
                 if (existingActive != null)
                 {
                     logger.LogInformation(

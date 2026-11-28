@@ -191,6 +191,21 @@ namespace Listenarr.Domain.Downloads
         }
 
         /// <summary>
+        /// Make a failed job runnable again with a fresh retry bound once the cause was repaired,
+        /// keeping its checkpoints so the import resumes where it stopped
+        /// </summary>
+        public DownloadProcessingJob Requeue(string message = "")
+        {
+            Status = ProcessingJobStatus.Pending;
+            RetryCount = 0;
+            NextRetryAt = null;
+            ErrorMessage = null;
+            CompletedAt = null;
+            AddLogEntry(message);
+            return this;
+        }
+
+        /// <summary>
         /// Indicates a job has started
         /// </summary>
         public DownloadProcessingJob MarkAsProcessing()

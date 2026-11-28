@@ -27,14 +27,16 @@ public class DownloadsController : ControllerBase
 {
     private readonly IDownloadRepository _downloadRepository;
     private readonly IDownloadService _downloadService;
+    private readonly IDownloadProcessingJobService _downloadProcessingJobService;
     private readonly ILogger<DownloadsController> _logger;
     private readonly IConfigurationService _configurationService;
     private readonly IMemoryCache? _cache;
 
-    public DownloadsController(IDownloadRepository downloadRepository, IDownloadService downloadService, ILogger<DownloadsController> logger, IConfigurationService configurationService, IMemoryCache? cache = null)
+    public DownloadsController(IDownloadRepository downloadRepository, IDownloadService downloadService, IDownloadProcessingJobService downloadProcessingJobService, ILogger<DownloadsController> logger, IConfigurationService configurationService, IMemoryCache? cache = null)
     {
         _downloadRepository = downloadRepository;
         _downloadService = downloadService;
+        _downloadProcessingJobService = downloadProcessingJobService;
         _logger = logger;
         _configurationService = configurationService;
         _cache = cache;
@@ -167,7 +169,7 @@ public class DownloadsController : ControllerBase
     }
 
     /// <summary>
-    /// Retry importing a download that was blocked due to import issues. Resets status to ImportPending.
+    /// Retry importing a download that was blocked due to import issues. Resets status to ImportPending and makes its import job runnable again.
     /// </summary>
     /// <param name="id">Download record ID.</param>
     [HttpPost("{id}/retry-import")]
@@ -194,6 +196,8 @@ public class DownloadsController : ControllerBase
             download.Unblock();
 
             await _downloadService.UpdateAsync(download);
+            // The download must be ImportPending before its job runs, or the processor rejects it as not ready.
+            await _downloadProcessingJobService.RequeueAsync(download);
 
             _logger.LogInformation("Reset blocked import {DownloadId} back to ImportPending", LogRedaction.SanitizeText(id));
             return Ok(new

@@ -31,6 +31,12 @@ namespace Listenarr.Application.Downloads.Contracts
         Task<string> EnqueueAsync(Download download);
 
         /// <summary>
+        /// Make the import of a download runnable again after its blocker was repaired. Returns the id of the
+        /// active job if one exists, revives the latest failed job otherwise, and creates a job when none is left.
+        /// </summary>
+        Task<string> RequeueAsync(Download download);
+
+        /// <summary>
         /// Get the next pending job to process
         /// </summary>
         Task<DownloadProcessingJob?> GetNextJobAsync();
