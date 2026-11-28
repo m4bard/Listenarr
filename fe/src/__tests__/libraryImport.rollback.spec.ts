@@ -23,12 +23,14 @@ const startManualImport = vi.fn()
 const addToLibrary = vi.fn()
 const removeFromLibrary = vi.fn()
 const updateAudiobook = vi.fn()
+const getAudiobook = vi.fn()
 
 vi.mock('@/services/api', () => ({
   apiService: {
     addToLibrary,
     removeFromLibrary,
     updateAudiobook,
+    getAudiobook,
     startManualImport,
     getAudibleMetadata: vi.fn(),
     getApplicationSettings: vi.fn().mockResolvedValue({}),
@@ -82,6 +84,7 @@ describe('library import rollback and destination messages', () => {
     addToLibrary.mockResolvedValue({ audiobook: { id: 42 } })
     removeFromLibrary.mockResolvedValue({ message: 'ok', id: 42 })
     updateAudiobook.mockResolvedValue({})
+    getAudiobook.mockResolvedValue({ id: 42, files: [] })
   })
 
   it('removes the entry it just created when no file could be imported', async () => {
@@ -186,7 +189,7 @@ describe('library import rollback and destination messages', () => {
     expect(result.errors).toEqual(['Book: A move job is still running for this folder.'])
   })
 
-  it.each([400, 404, 409])(
+  it.each([400, 404])(
     'removes the new entry when the import request is rejected with %i',
     async (status) => {
       const store = await storeWithOneBook('move')
@@ -194,6 +197,7 @@ describe('library import rollback and destination messages', () => {
 
       const result = await store.importSelected('/library')
 
+      expect(getAudiobook).not.toHaveBeenCalled()
       expect(removeFromLibrary).toHaveBeenCalledWith(42, {
         deleteFiles: false,
         deleteFolder: false,
@@ -201,6 +205,52 @@ describe('library import rollback and destination messages', () => {
       expect(result.errors).toHaveLength(1)
     },
   )
+
+  it('removes the new entry after a 409 when it has no files', async () => {
+    const store = await storeWithOneBook('move')
+    startManualImport.mockRejectedValueOnce(apiError(409, '{}'))
+
+    const result = await store.importSelected('/library')
+
+    expect(getAudiobook).toHaveBeenCalledWith(42)
+    expect(removeFromLibrary).toHaveBeenCalledWith(42, { deleteFiles: false, deleteFolder: false })
+    expect(result.errors).toHaveLength(1)
+  })
+
+  it('keeps the new entry after a 409 when files were already imported into it', async () => {
+    const store = await storeWithOneBook('move')
+    startManualImport.mockRejectedValueOnce(apiError(409, '{}'))
+    getAudiobook.mockResolvedValueOnce({
+      id: 42,
+      files: [{ id: 1, path: '/library/Book/Book.m4b' }],
+    })
+
+    const result = await store.importSelected('/library')
+
+    expect(removeFromLibrary).not.toHaveBeenCalled()
+    expect(result.errors).toHaveLength(1)
+  })
+
+  it('keeps the new entry after a 409 when its files cannot be determined', async () => {
+    const store = await storeWithOneBook('move')
+    startManualImport.mockRejectedValueOnce(apiError(409, '{}'))
+    getAudiobook.mockResolvedValueOnce({ id: 42 })
+
+    await store.importSelected('/library')
+
+    expect(removeFromLibrary).not.toHaveBeenCalled()
+  })
+
+  it('keeps the new entry after a 409 when looking the entry up fails', async () => {
+    const store = await storeWithOneBook('move')
+    startManualImport.mockRejectedValueOnce(apiError(409, '{}'))
+    getAudiobook.mockRejectedValueOnce(new Error('Failed to fetch'))
+
+    const result = await store.importSelected('/library')
+
+    expect(removeFromLibrary).not.toHaveBeenCalled()
+    expect(result.errors).toHaveLength(1)
+  })
 
   it('keeps the new entry when the import request fails with a server error', async () => {
     const store = await storeWithOneBook('move')

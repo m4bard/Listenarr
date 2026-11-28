@@ -85,7 +85,19 @@ class MatchRecordNotFoundError extends Error {}
 // The API's wording when a book's destination folder already belongs to another library entry.
 const OWNED_DESTINATION_MESSAGE = /already assigned to another audiobook/i
 
-const REJECTED_REQUEST_STATUSES = [400, 404, 409]
+// 400 and 404 are answered before any file is touched. A 409 can also come from a later batch
+// step, so it only counts as 'nothing imported' after the entry is seen to hold no files.
+const REJECTED_REQUEST_STATUSES = [400, 404]
+
+async function entryHasNoFiles(audiobookId: number): Promise<boolean> {
+  try {
+    const entry = await apiService.getAudiobook(audiobookId)
+    return Array.isArray(entry.files) && entry.files.length === 0 && !entry.fileCount
+  } catch (e) {
+    logger.debug('[libraryImport] Could not check the entry created for a failed import:', e)
+    return false
+  }
+}
 
 async function removeCreatedEntry(audiobookId: number): Promise<boolean> {
   try {
@@ -676,12 +688,13 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
           })
         } catch (e) {
           // A request the API rejected (for example a vanished source folder) imported
-          // nothing. Server errors and network failures leave the outcome unknown, so the
-          // entry stays.
+          // nothing. Server errors, network failures and a 409 whose entry holds files or
+          // cannot be checked leave the outcome unknown, so the entry stays.
           const status = (e as { status?: number })?.status
           if (
             createdAudiobookId !== null &&
-            REJECTED_REQUEST_STATUSES.includes(status ?? 0) &&
+            (REJECTED_REQUEST_STATUSES.includes(status ?? 0) ||
+              (status === 409 && (await entryHasNoFiles(createdAudiobookId)))) &&
             !(await removeCreatedEntry(createdAudiobookId))
           ) {
             throw new Error(
